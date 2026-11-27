@@ -10,6 +10,41 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (req.query.resource === "menus") return menuHandler(req,res);
     const user = await requireUser(req, res);
     if (!user) return;
+    if (req.method === "POST" && req.query.resource === "webhook-reconnect") {
+      if (process.env.VERCEL_ENV !== "preview") return json(res, 403, { error: "ثبت دوباره وبهوک فقط از نسخه آزمایشی مجاز است." });
+      const rawBotId = bodyOf(req).botId;
+      const botId = typeof rawBotId === "string" ? rawBotId : "";
+      if (!botId) return json(res, 400, { error: "شناسه ربات الزامی است." });
+      const bot = await ownedBot(user.id, botId);
+      if (!bot || !bot.encrypted_token) return json(res, 404, { error: "ربات موردنظر پیدا نشد." });
+      if (bot.status !== "active") return json(res, 409, { error: "ربات غیرفعال است." });
+      if (process.env.ALLOW_PREVIEW_TELEGRAM_WEBHOOK !== "true") return json(res, 403, { error: "اتصال وبهوک در پیش‌نمایش فعال نشده است." });
+      const appUrl = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/$/, "");
+      if (!appUrl.startsWith("https://")) return json(res, 500, { error: "نشانی امن برنامه روی سرور تنظیم نشده است." });
+      const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+      if (!bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
+      const token = decryptToken(bot.encrypted_token);
+      const current = await telegram<{ url?: string }>(token, "getWebhookInfo");
+      if (current.url) {
+        let currentUrl: URL;
+        try { currentUrl = new URL(current.url); } catch { return json(res, 409, { error: "نشانی وبهوک فعلی معتبر نیست؛ تغییری انجام نشد." }); }
+        const configured = new URL(appUrl);
+        if (currentUrl.host !== configured.host || currentUrl.pathname !== "/api/telegram/webhook") return json(res, 409, { error: "این ربات به نشانی دیگری متصل است؛ وبهوک تغییر داده نشد." });
+      }
+      const webhookUrl = new URL(appUrl + "/api/telegram/webhook");
+      webhookUrl.searchParams.set("botId", botId);
+      webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+      const webhookSecret = randomBytes(32).toString("hex");
+      const previousSecretHash = bot.webhook_secret_hash;
+      await db.query("UPDATE bots SET webhook_secret_hash=$1 WHERE id=$2 AND owner_id=$3", [sha256(webhookSecret), botId, user.id]);
+      try {
+        await telegram(token, "setWebhook", { url: webhookUrl.toString(), secret_token: webhookSecret, allowed_updates: ["message", "edited_message", "callback_query"], drop_pending_updates: false });
+      } catch (error) {
+        await db.query("UPDATE bots SET webhook_secret_hash=$1 WHERE id=$2 AND owner_id=$3", [previousSecretHash, botId, user.id]);
+        throw error;
+      }
+      return json(res, 200, { success: true, message: "وبهوک ربات در نسخه آزمایشی دوباره ثبت شد." });
+    }
     if (req.method === "GET" && req.query.resource === "webhook-status") {
       const rawBotId = req.query.botId;
       const botId = Array.isArray(rawBotId) ? rawBotId[0] : rawBotId;
