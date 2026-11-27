@@ -41,6 +41,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const rawId = req.query.botId;
   const botId = Array.isArray(rawId) ? rawId[0] : rawId;
   if (!botId) return json(res, 400, { error: "Missing bot id" });
+  let retryableBotId: string | null = null;
+  let retryableUpdateId: number | null = null;
   try {
     const botResult = await db.query(
       "SELECT b.id,b.owner_id,b.status,b.webhook_secret_hash,s.encrypted_token FROM bots b JOIN bot_secrets s ON s.bot_id=b.id WHERE b.id=$1 LIMIT 1",
@@ -59,6 +61,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       [bot.id, update.update_id],
     );
     if (!inserted.rowCount) return json(res, 200, { ok: true, duplicate: true });
+    // If processing fails, remove the dedupe marker so Telegram's webhook retry can process this update again.
+    retryableBotId = bot.id;
+    retryableUpdateId = update.update_id;
 
     const callback = update.callback_query;
     if (callback) {
@@ -193,6 +198,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
     return json(res, 200, { ok: true, stored: true });
   } catch (error) {
+    if (retryableBotId && retryableUpdateId !== null) {
+      try {
+        await db.query("DELETE FROM telegram_updates WHERE bot_id=$1 AND update_id=$2", [retryableBotId, retryableUpdateId]);
+      } catch (cleanupError) {
+        console.error("telegram_update_retry_cleanup_error", cleanupError);
+      }
+    }
     console.error("telegram_webhook_error", error);
     return json(res, 500, { error: "Webhook processing failed" });
   }
