@@ -18,6 +18,8 @@ const pool = new Pool({
 const origins = new Set<string>([
   "http://localhost:5173",
   "https://telegram-bot-saas-git-fix-auth-nested-routes-afshin7.vercel.app",
+  "https://telegram-bot-saas-git-feat-license-customer-menu-a5fd88-afshin7.vercel.app",
+  "https://telegram-bot-saas-f7etw17sz-afshin7.vercel.app",
 ]);
 for (const value of [process.env.APP_URL, process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]) {
   if (!value) continue;
