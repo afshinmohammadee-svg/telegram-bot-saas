@@ -198,7 +198,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const rawInput = (message.text ?? "").trim();
     const photoFileId = message.photo?.[message.photo.length - 1]?.file_id ?? null;
-    const photoPayload = photoFileId ? await storePhotoFromManagementBot(token, photoFileId) : null;
+    const getPhotoPayload = async () => photoFileId ? storePhotoFromManagementBot(token, photoFileId) : null;
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
     const menuLicense = await db.query(
@@ -319,11 +319,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (menuSession.step === "banner_wait") {
+        const photoPayload = await getPhotoPayload();
         if (!photoPayload) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
         await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoPayload]);
         await saveSession("home",{},botId); await send(token,chatId,"✅ بنر صفحه اصلی ذخیره شد.",homeKeyboard); return json(res,200,{ok:true});
       }
       if (menuSession.step === "add_content") {
+        const photoPayload = menuSession.draft?.responseType === "photo" ? await getPhotoPayload() : null;
         if (menuSession.draft?.responseType === "photo" && !photoPayload) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
         const value=(menuSession.draft?.responseType === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
         if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
@@ -353,6 +355,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (menuSession.step === "edit_content") {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
+        const photoPayload = type === "photo" ? await getPhotoPayload() : null;
         if (type === "photo" && !photoPayload) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
         const value=(type === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
         if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
