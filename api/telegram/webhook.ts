@@ -230,7 +230,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (text.startsWith("/start")) {
       const token = decryptToken(bot.encrypted_token);
-      const startPayload = text.match(/^\/start(?:@[A-Za-z0-9_]+)?(?:\\s+([A-Za-z0-9_-]{1,64}))?/i)?.[1];
+      const startPayload = text.match(/^\/start(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?/i)?.[1];
       let targetMenuId: string | null = null;
       if (startPayload) {
         const startLink = await db.query(
