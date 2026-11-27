@@ -4,12 +4,13 @@ import { Pool } from "pg";
 import { auth } from "../../src/lib/auth.js";
 
 const globalForPool = globalThis as typeof globalThis & { __telegramPool?: Pool };
+const databaseUrl = process.env.DATABASE_URL;
+const secureDatabaseUrl = databaseUrl?.replace(/([?&]sslmode=)require(?=(&|$))/i, "$1verify-full");
 export const db = globalForPool.__telegramPool ?? new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: secureDatabaseUrl,
   max: 5,
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 10_000,
-  ssl: process.env.DATABASE_URL?.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 if (process.env.NODE_ENV !== "production") globalForPool.__telegramPool = db;
 
@@ -83,11 +84,23 @@ export function safeEqualHex(a: string, b: string) {
 }
 
 export async function telegram<T>(token: string, method: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  // Retry only read-only Telegram methods: retrying sendMessage/sendPhoto after
+  // a lost response could create duplicate customer-visible messages.
+  const retryable = new Set(["getMe", "getFile", "getWebhookInfo", "getChat", "getChatMember"]);
+  let response: Response;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      break;
+    } catch (error) {
+      if (!retryable.has(method) || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
   const result = await response.json() as { ok?: boolean; result?: T; description?: string };
   if (!response.ok || !result.ok) throw new Error(result.description || `Telegram API error: ${response.status}`);
   return result.result as T;
