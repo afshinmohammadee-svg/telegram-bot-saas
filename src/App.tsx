@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import {
   Bot, CalendarClock, ChevronDown, CircleHelp, Command, LayoutDashboard,
   MessageCircle, Moon, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck,
-  Sun, Users, Zap, RefreshCw, Trash2, Power, X, LoaderCircle, UserCog, ListChecks, KeyRound, RadioTower
+  Sun, Users, Zap, RefreshCw, Trash2, Power, X, LoaderCircle, UserCog, ListChecks, RadioTower
 } from 'lucide-react'
 
 type BotInfo = { id: string; username: string | null; display_name: string | null; status: string; last_error?: string | null; connected_at?: string | null }
