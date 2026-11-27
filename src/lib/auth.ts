@@ -5,14 +5,14 @@ import { authAccess, authRoles } from "./auth-permissions.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is not configured");
+const secureDatabaseUrl = databaseUrl.replace(/([?&]sslmode=)require(?=(&|$))/i, "$1verify-full");
 if (!process.env.BETTER_AUTH_SECRET) throw new Error("BETTER_AUTH_SECRET is not configured");
 
 const pool = new Pool({
-  connectionString: databaseUrl,
+  connectionString: secureDatabaseUrl,
   max: 5,
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 10_000,
-  ssl: databaseUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 
 const origins = new Set<string>([
@@ -88,6 +88,9 @@ export const auth = betterAuth({
     maxPasswordLength: 128,
   },
   advanced: {
+    // Railway and Vercel overwrite X-Real-IP at their public edge.
+    // Avoid trusting multi-hop X-Forwarded-For chains without a proxy allowlist.
+    ipAddress: { ipAddressHeaders: ["x-real-ip"] },
     useSecureCookies: process.env.NODE_ENV === "production",
   },
   plugins: [
