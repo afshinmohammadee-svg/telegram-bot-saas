@@ -1,7 +1,7 @@
 import menuHandler from "../_lib/bot-menus.js";
 import { randomBytes } from "node:crypto";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { db, bodyOf, encryptToken, json, ownedBot, requireUser, sha256, telegram } from "../_lib/server.js";
+import { db, bodyOf, decryptToken, encryptToken, json, ownedBot, requireUser, sha256, telegram } from "../_lib/server.js";
 
 type TelegramMe = { id: number; username?: string; first_name?: string };
 
