@@ -6,34 +6,92 @@ type TgMessage = { message_id: number; date: number; chat: { id: number; type: s
 type TgCallback = { id: string; data?: string; from: TgUser; message?: TgMessage };
 type TgUpdate = { update_id: number; message?: TgMessage; edited_message?: TgMessage; callback_query?: TgCallback };
 
+function escapeHtml(value: string) {
+  return value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
 async function showMenu(token: string, botId: string, chatId: number, parentId: string | null) {
-  const result = await db.query(
-    `SELECT id,title,description,parent_id,response_type,response_content,target_url
-       FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true
-      ORDER BY sort_order,title LIMIT 100`,
-    [botId,parentId],
-  );
+  const [result, appearanceResult] = await Promise.all([
+    db.query(
+      `SELECT id,title,description,parent_id,response_type,response_content,target_url
+         FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true
+        ORDER BY sort_order,title LIMIT 100`,
+      [botId,parentId],
+    ),
+    db.query(
+      "SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id FROM bot_menu_appearance WHERE bot_id=$1",
+      [botId],
+    ),
+  ]);
+  const appearance = appearanceResult.rows[0] ?? {
+    theme:"luxury_modern",button_columns:1,emoji_mode:"subtle",
+    welcome_title:"به فضای اختصاصی ما خوش آمدید",
+    welcome_text:"برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",
+    banner_file_id:null,
+  };
   const rows = result.rows as Array<{id:string;title:string;description:string|null;parent_id:string|null;response_type:string;response_content:string|null;target_url:string|null}>;
-  const keyboard = rows.map(item => [{
-    text: item.title.slice(0,64),
-    ...(item.response_type === "url" && item.target_url
-      ? { url: item.target_url }
-      : { callback_data: "menu:" + item.id }),
-  }]);
   if (!rows.length) {
     await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است."});
     return;
   }
+
+  const columns = Math.max(1,Math.min(3,Number(appearance.button_columns)||1));
+  const keyboard: Array<Array<Record<string,string>>> = [];
+  const emojiFor = (item: typeof rows[number], index: number) => {
+    if (appearance.emoji_mode === "off") return "";
+    const icon = item.response_type === "url" ? "↗️" : item.response_type === "submenu" ? "✧" : "◆";
+    if (appearance.emoji_mode === "expressive") {
+      const icons = ["💎","✨","🌙","🪄","🖋️","🎯","🛍️","📌"];
+      return icons[index % icons.length] + " ";
+    }
+    return icon + " ";
+  };
+  for (let i=0;i<rows.length;i+=columns) {
+    keyboard.push(rows.slice(i,i+columns).map((item,index) => ({
+      text:(emojiFor(item,i+index)+item.title).slice(0,64),
+      ...(item.response_type === "url" && item.target_url
+        ? { url:item.target_url }
+        : { callback_data:"menu:"+item.id }),
+    })));
+  }
+
+  let heading = String(appearance.welcome_title || "به فضای اختصاصی ما خوش آمدید");
+  if (parentId) {
+    const path = await db.query(
+      `WITH RECURSIVE menu_path AS (
+         SELECT id,title,parent_id,0 AS depth FROM bot_menus WHERE id=$1 AND bot_id=$2
+         UNION ALL
+         SELECT p.id,p.title,p.parent_id,c.depth+1 FROM bot_menus p
+         JOIN menu_path c ON c.parent_id=p.id WHERE p.bot_id=$2
+       ) SELECT title FROM menu_path ORDER BY depth DESC`,
+      [parentId,botId],
+    );
+    heading = path.rows.map((item:{title:string})=>item.title).join("  ›  ") || heading;
+    heading = "✦ " + heading;
+  }
+
   if (parentId) {
     const parent = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId,botId]);
-    keyboard.push([{ text: "⬅️ بازگشت", callback_data: "back:" + (parent.rows[0]?.parent_id ?? "root") }]);
-    keyboard.push([{ text: "🏠 منوی اصلی", callback_data: "main:root" }]);
+    keyboard.push([
+      {text:"⬅️ بازگشت",callback_data:"back:"+(parent.rows[0]?.parent_id ?? "root")},
+      {text:"🏠 منوی اصلی",callback_data:"main:root"},
+    ]);
   }
-  await telegram(token,"sendMessage",{
+  const text = parentId
+    ? "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:")
+    : "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text || "برای ادامه یکی از گزینه‌ها را انتخاب کنید."));
+  const payload = {
     chat_id:chatId,
-    text: parentId ? "یکی از گزینه‌ها را انتخاب کن:" : "سلام! لطفاً یکی از گزینه‌ها را انتخاب کن:",
+    caption:text,
+    text,
+    parse_mode:"HTML",
     reply_markup:{inline_keyboard:keyboard},
-  });
+  };
+  if (!parentId && appearance.banner_file_id) {
+    await telegram(token,"sendPhoto",{chat_id:chatId,photo:appearance.banner_file_id,caption,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
+  } else {
+    await telegram(token,"sendMessage",{chat_id:chatId,text,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
+  }
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
