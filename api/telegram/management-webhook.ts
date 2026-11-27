@@ -2,7 +2,7 @@ import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
-type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string };
+type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string; contact?: { phone_number: string; user_id?: number } };
 type TgUpdate = { update_id: number; message?: TgMessage };
 
 const adminKeyboard = {
@@ -18,6 +18,7 @@ const customerKeyboard = {
   keyboard: [
     [{ text: "📊 وضعیت لایسنس" }, { text: "🤖 ربات‌های من" }],
     [{ text: "⏸ توقف ربات" }, { text: "▶️ فعال‌سازی ربات" }],
+    [{ text: "📱 تأیید شماره موبایل", request_contact: true }],
     [{ text: "🔗 راهنمای اتصال" }, { text: "ℹ️ راهنما" }],
   ],
   resize_keyboard: true,
@@ -163,6 +164,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     );
     if (!account.rowCount) {
       await send(token, chatId, "برای استفاده از مدیریت تلگرامی، ابتدا وارد پنل تلگرام‌یار شو و حساب تلگرامت را با لینک یک‌بارمصرف متصل کن.\n\nاین اتصال فقط با زدن Start در لینک اختصاصی حساب خودت تأیید می‌شود.", guestKeyboard);
+      return json(res, 200, { ok: true });
+    }
+
+    if (message.contact) {
+      if (message.contact.user_id !== from.id) {
+        await send(token, chatId, "برای تأیید شماره، باید مخاطب شماره تلفن خودت را از دکمه اشتراک‌گذاری ارسال کنی.", customerKeyboard);
+      } else {
+        const phone = message.contact.phone_number.replace(/[^+0-9]/g, "").slice(0, 20);
+        await db.query(
+          "UPDATE customer_telegram_accounts SET phone_number=$2,phone_verified_at=now(),last_seen_at=now(),updated_at=now() WHERE telegram_user_id=$1",
+          [telegramId, phone],
+        );
+        await send(token, chatId, "✅ شماره موبایل خودت با موفقیت تأیید و به حساب متصل شد.", customerKeyboard);
+      }
       return json(res, 200, { ok: true });
     }
 
