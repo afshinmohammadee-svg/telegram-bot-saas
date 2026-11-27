@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { admin } from "better-auth/plugins";
 import { Pool } from "pg";
-import { authAccess, authRoles } from "./auth-permissions";
+import { authAccess, authRoles } from "./auth-permissions.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is not configured");
