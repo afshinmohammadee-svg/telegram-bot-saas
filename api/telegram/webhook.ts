@@ -20,14 +20,14 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
       ? { url: item.target_url }
       : { callback_data: "menu:" + item.id }),
   }]);
+  if (!rows.length) {
+    await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است."});
+    return;
+  }
   if (parentId) {
     const parent = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId,botId]);
     keyboard.push([{ text: "⬅️ بازگشت", callback_data: "back:" + (parent.rows[0]?.parent_id ?? "root") }]);
-  }
-  keyboard.push([{ text: "🏠 منوی اصلی", callback_data: "main:root" }]);
-  if (!keyboard.length) {
-    await telegram(token,"sendMessage",{chat_id:chatId,text:"هنوز منویی برای نمایش تعریف نشده است."});
-    return;
+    keyboard.push([{ text: "🏠 منوی اصلی", callback_data: "main:root" }]);
   }
   await telegram(token,"sendMessage",{
     chat_id:chatId,
@@ -79,19 +79,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               await showMenu(token,bot.id,callbackChatId,item.id);
             } else {
               const content = String(item.response_content ?? item.description ?? item.title);
-              const siblings = await db.query(
-                "SELECT id,title,response_type,target_url FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true ORDER BY sort_order,title",
-                [bot.id,item.parent_id],
-              );
-              const keyboard = siblings.rows.map((entry: {id:string;title:string;response_type:string;target_url:string|null})=>[{
-                text:entry.title.slice(0,64),
-                ...(entry.response_type==="url" && entry.target_url ? {url:entry.target_url}:{callback_data:"menu:"+entry.id}),
-              }]);
               const backTarget = item.parent_id
                 ? (await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [item.parent_id,bot.id])).rows[0]?.parent_id ?? "root"
                 : "root";
-              keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+backTarget}]);
-              keyboard.push([{text:"🏠 منوی اصلی",callback_data:"main:root"}]);
+              const keyboard = [
+                [{text:"⬅️ بازگشت",callback_data:"back:"+backTarget}],
+                [{text:"🏠 منوی اصلی",callback_data:"main:root"}],
+              ];
               const replyMarkup = {reply_markup:{inline_keyboard:keyboard}};
               if (item.response_type === "photo") {
                 await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
