@@ -46,8 +46,13 @@ async function storePhotoFromManagementBot(token: string, fileId: string): Promi
   if (declaredSize > 8 * 1024 * 1024) throw new Error("Photo exceeds 8 MB limit");
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("Photo is empty or exceeds 8 MB limit");
-  const mime = (response.headers.get("content-type") || "image/jpeg").split(";")[0].toLowerCase();
-  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw new Error("Unsupported photo format");
+  // Telegram's file endpoint may return application/octet-stream even for valid photos.
+  // Detect the actual format from the file signature instead of trusting that header.
+  let mime = "";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) mime = "image/jpeg";
+  else if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))) mime = "image/png";
+  else if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") mime = "image/webp";
+  if (!mime) throw new Error("Unsupported photo format: file signature is not JPEG, PNG, or WebP");
   return `tgphoto:${mime}:${bytes.toString("base64")}`;
 }
 
