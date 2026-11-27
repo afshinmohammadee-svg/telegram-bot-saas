@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { db, bodyOf, currentUser, decryptToken, encryptToken, json, ownedBot, requireUser, sha256, telegram } from "../_lib/server.js";
+import { db, bodyOf, currentUser, encryptToken, json, ownedBot, requireUser, sha256, telegram } from "../_lib/server.js";
 
 type TelegramMe = { id: number; username?: string; first_name?: string };
 
