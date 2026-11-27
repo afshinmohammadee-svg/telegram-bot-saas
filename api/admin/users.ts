@@ -29,7 +29,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rawId = req.query.id;
       const userId = Array.isArray(rawId) ? rawId[0] : rawId;
       const expiresAtInput = String(bodyOf(req).expiresAt ?? "");
-      if (!userId || !/^\\d{4}-\\d{2}-\\d{2}$/.test(expiresAtInput)) {
+      if (!userId || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAtInput)) {
         return json(res, 400, { error: "کاربر و تاریخ انقضا را مشخص کن." });
       }
       const expiresAt = new Date(`${expiresAtInput}T23:59:59.999Z`);
