@@ -3,7 +3,37 @@ import { db, decryptToken, json, safeEqualHex, sha256, subscriptionActive, teleg
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string };
 type TgMessage = { message_id: number; date: number; chat: { id: number; type: string }; from?: TgUser; text?: string };
-type TgUpdate = { update_id: number; message?: TgMessage; edited_message?: TgMessage };
+type TgCallback = { id: string; data?: string; from: TgUser; message?: TgMessage };
+type TgUpdate = { update_id: number; message?: TgMessage; edited_message?: TgMessage; callback_query?: TgCallback };
+
+async function showMenu(token: string, botId: string, chatId: number, parentId: string | null) {
+  const result = await db.query(
+    `SELECT id,title,description,parent_id,response_type,response_content,target_url
+       FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true
+      ORDER BY sort_order,title LIMIT 100`,
+    [botId,parentId],
+  );
+  const rows = result.rows as Array<{id:string;title:string;description:string|null;parent_id:string|null;response_type:string;response_content:string|null;target_url:string|null}>;
+  const keyboard = rows.map(item => [{
+    text: item.title.slice(0,64),
+    ...(item.response_type === "url" && item.target_url
+      ? { url: item.target_url }
+      : { callback_data: "menu:" + item.id }),
+  }]);
+  if (parentId) {
+    const parent = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId,botId]);
+    keyboard.push([{ text: "⬅️ بازگشت", callback_data: "back:" + (parent.rows[0]?.parent_id ?? "root") }]);
+  }
+  if (!keyboard.length) {
+    await telegram(token,"sendMessage",{chat_id:chatId,text:"هنوز منویی برای نمایش تعریف نشده است."});
+    return;
+  }
+  await telegram(token,"sendMessage",{
+    chat_id:chatId,
+    text: parentId ? "یکی از گزینه‌ها را انتخاب کن:" : "سلام! لطفاً یکی از گزینه‌ها را انتخاب کن:",
+    reply_markup:{inline_keyboard:keyboard},
+  });
+}
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
@@ -28,6 +58,53 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       [bot.id, update.update_id],
     );
     if (!inserted.rowCount) return json(res, 200, { ok: true, duplicate: true });
+
+    const callback = update.callback_query;
+    if (callback) {
+      const callbackChatId = callback.message?.chat.id;
+      const callbackData = callback.data ?? "";
+      const subscription = await subscriptionActive(bot.owner_id);
+      if (callbackChatId && subscription) {
+        const token = decryptToken(bot.encrypted_token);
+        if (callbackData.startsWith("menu:")) {
+          const menuId = callbackData.slice(5);
+          const selected = await db.query(
+            "SELECT id,title,description,parent_id,response_type,response_content,target_url FROM bot_menus WHERE id=$1 AND bot_id=$2 AND is_active=true",
+            [menuId,bot.id],
+          );
+          const item = selected.rows[0];
+          if (item) {
+            if (item.response_type === "submenu") {
+              await showMenu(token,bot.id,callbackChatId,item.id);
+            } else {
+              const content = String(item.response_content ?? item.description ?? item.title);
+              const siblings = await db.query(
+                "SELECT id,title,response_type,target_url FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true ORDER BY sort_order,title",
+                [bot.id,item.parent_id],
+              );
+              const keyboard = siblings.rows.map((entry: {id:string;title:string;response_type:string;target_url:string|null})=>[{
+                text:entry.title.slice(0,64),
+                ...(entry.response_type==="url" && entry.target_url ? {url:entry.target_url}:{callback_data:"menu:"+entry.id}),
+              }]);
+              if (item.parent_id) keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+item.parent_id}]);
+              const replyMarkup = keyboard.length ? {reply_markup:{inline_keyboard:keyboard}} : {};
+              if (item.response_type === "photo") {
+                await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
+              } else if (item.response_type === "document") {
+                await telegram(token,"sendDocument",{chat_id:callbackChatId,document:content,...replyMarkup});
+              } else {
+                await telegram(token,"sendMessage",{chat_id:callbackChatId,text:content,...replyMarkup});
+              }
+            }
+          }
+        } else if (callbackData.startsWith("back:")) {
+          const parent = callbackData.slice(5);
+          await showMenu(token,bot.id,callbackChatId,parent==="root"?null:parent);
+        }
+      }
+      await telegram(decryptToken(bot.encrypted_token),"answerCallbackQuery",{callback_query_id:callback.id});
+      return json(res,200,{ok:true});
+    }
 
     const message = update.message;
     const sender = message?.from;
@@ -73,10 +150,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const subscription = await subscriptionActive(bot.owner_id);
     if (!subscription) return json(res, 200, { ok: true, stored: true, subscriptionInactive: true });
     if (text.startsWith("/start")) {
-      await telegram(decryptToken(bot.encrypted_token), "sendMessage", {
-        chat_id: message.chat.id,
-        text: "سلام! پیام شما دریافت شد. به‌زودی پاسخ‌گوی شما خواهیم بود.",
-      });
+      await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,null);
       return json(res, 200, { ok: true, stored: true });
     }
     if (text) {
