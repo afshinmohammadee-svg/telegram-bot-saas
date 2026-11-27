@@ -15,6 +15,7 @@ type Rule = { id: string; trigger_text: string; reply_text: string; match_type: 
 type AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
 type LicensePlan = { id: string; code: string; name: string; description: string | null; duration_days: number; max_bots: number; max_menus: number; max_visitors: number | null; features: Record<string, boolean>; is_active: boolean; issued_count: number }
 type LicenseItem = { id: string; user_id: string; plan_id: string; status: string; starts_at: string; expires_at: string; user_name: string | null; user_email: string | null; plan_name: string; plan_code: string }
+type MenuAppearance = { theme: 'luxury_modern' | 'minimal' | 'vibrant'; button_columns: number; emoji_mode: 'off' | 'subtle' | 'expressive'; welcome_title: string; welcome_text: string; banner_file_id: string }
 type BotMenu = { id: string; title: string; description: string | null; parent_id: string | null; response_type: 'text' | 'photo' | 'document' | 'url' | 'submenu'; response_content: string | null; target_url: string | null; sort_order: number; is_active: boolean }
 type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'مدیریت لایسنس' | 'منوساز' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
@@ -63,6 +64,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
   const [planDraft, setPlanDraft] = useState({ code: '', name: '', description: '', durationDays: '30', maxBots: '1', maxMenus: '20', maxVisitors: '', features: { conversations: true, autoReplies: true, menuBuilder: true } })
   const [licenseDraft, setLicenseDraft] = useState({ userId: '', planId: '', notes: '' })
   const [menus, setMenus] = useState<BotMenu[]>([])
+  const [menuAppearance, setMenuAppearance] = useState<MenuAppearance>({ theme:'luxury_modern', button_columns:1, emoji_mode:'subtle', welcome_title:'به فضای اختصاصی ما خوش آمدید', welcome_text:'برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.', banner_file_id:'' })
   const [menuDraft, setMenuDraft] = useState({ id: '', title: '', description: '', parentId: '', responseType: 'text' as BotMenu['response_type'], responseContent: '', targetUrl: '' })
 
   const refreshDashboard = useCallback(async () => {
@@ -88,8 +90,12 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
         setRules(data.rules)
       }
       if (active === 'منوساز') {
-        const data = await api<{ menus: BotMenu[] }>('/api/bot-menus')
+        const [data, appearanceData] = await Promise.all([
+          api<{ menus: BotMenu[] }>('/api/bot-menus'),
+          api<{ appearance: MenuAppearance }>('/api/bots?resource=menu-appearance'),
+        ])
         setMenus(data.menus)
+        setMenuAppearance(appearanceData.appearance)
       }
       if (active === 'مدیریت کاربران' && isSuperAdmin) {
         const data = await api<{ users: AdminUser[] }>('/api/admin/users')
@@ -218,6 +224,18 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
       setMenuDraft({ id:'', title:'', description:'', parentId:'', responseType:'text', responseContent:'', targetUrl:'' })
       setNotice(id ? 'منو ویرایش شد.' : 'منو ایجاد شد.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره منو ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function saveMenuAppearance(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('')
+    try {
+      const data = await api<{ appearance: MenuAppearance }>('/api/bots?resource=menu-appearance', {
+        method:'PATCH', body:JSON.stringify(menuAppearance),
+      })
+      setMenuAppearance(data.appearance)
+      setNotice('ظاهر منوی ربات ذخیره شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره ظاهر منو ناموفق بود.') }
     finally { setBusy(false) }
   }
 
@@ -352,6 +370,27 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
                 {menuDraft.responseType!=='submenu' && menuDraft.responseType!=='url' ? <label className="wide-field">{menuDraft.responseType==='text'?'متن پاسخ':menuDraft.responseType==='photo'?'آدرس file_id یا URL عکس':'آدرس file_id یا URL فایل'}<textarea rows={3} maxLength={4000} value={menuDraft.responseContent} onChange={e=>setMenuDraft(v=>({...v,responseContent:e.target.value}))} required placeholder="محتوای ارسالی به کاربر تلگرام"/></label> : null}
                 <label className="wide-field">توضیحات اختیاری<input value={menuDraft.description} onChange={e=>setMenuDraft(v=>({...v,description:e.target.value}))} maxLength={1000} placeholder="توضیح برای مدیریت داخلی"/></label>
                 <div className="wide-field" style={{display:'flex',gap:10,flexWrap:'wrap'}}><button className="primary-btn" disabled={busy}>{menuDraft.id?'ذخیره تغییرات':'ایجاد منو'}</button>{menuDraft.id?<button type="button" className="outline-btn" onClick={()=>setMenuDraft({id:'',title:'',description:'',parentId:'',responseType:'text',responseContent:'',targetUrl:''})}>انصراف از ویرایش</button>:null}</div>
+              </form>
+            </div>
+            <div className="panel rule-form-panel">
+              <div className="panel-heading"><div><h2>شخصی‌سازی ظاهر منو</h2><p>تنظیمات فقط روی همین ربات اعمال می‌شود؛ قالب لوکس و مدرن، پیش‌فرض همه ربات‌هاست.</p></div><Settings className="muted-icon"/></div>
+              <form className="rule-form" onSubmit={saveMenuAppearance}>
+                <label>قالب ظاهری<select value={menuAppearance.theme} onChange={e=>setMenuAppearance(v=>({...v,theme:e.target.value as MenuAppearance['theme']}))}>
+                  <option value="luxury_modern">لوکس و مدرن (پیشنهادی)</option><option value="minimal">مینیمال و ساده</option><option value="vibrant">رنگارنگ و پرانرژی</option>
+                </select></label>
+                <label>تعداد ستون دکمه‌ها<select value={String(menuAppearance.button_columns)} onChange={e=>setMenuAppearance(v=>({...v,button_columns:Number(e.target.value)}))}>
+                  <option value="1">تک‌ستونه</option><option value="2">دوستونه</option><option value="3">سه‌ستونه</option>
+                </select></label>
+                <label>میزان استفاده از ایموجی<select value={menuAppearance.emoji_mode} onChange={e=>setMenuAppearance(v=>({...v,emoji_mode:e.target.value as MenuAppearance['emoji_mode']}))}>
+                  <option value="off">بدون ایموجی</option><option value="subtle">ظریف و محدود</option><option value="expressive">متنوع و پررنگ</option>
+                </select></label>
+                <label>عنوان خوشامدگویی<input value={menuAppearance.welcome_title} onChange={e=>setMenuAppearance(v=>({...v,welcome_title:e.target.value}))} maxLength={120} required/></label>
+                <label className="wide-field">متن خوشامدگویی<textarea rows={3} maxLength={700} value={menuAppearance.welcome_text} onChange={e=>setMenuAppearance(v=>({...v,welcome_text:e.target.value}))} required/></label>
+                <label className="wide-field">شناسه فایل بنر تلگرام (اختیاری)<input value={menuAppearance.banner_file_id} onChange={e=>setMenuAppearance(v=>({...v,banner_file_id:e.target.value}))} maxLength={500} placeholder="file_id عکس ارسال‌شده به ربات"/></label>
+                <div className="wide-field" style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+                  <button className="primary-btn" disabled={busy}><ShieldCheck size={16}/> ذخیره ظاهر منو</button>
+                  <span style={{fontSize:11,color:'var(--muted)'}}>پیش‌نمایش تلگرام: {menuAppearance.button_columns} ستون · {menuAppearance.emoji_mode==='off'?'بدون ایموجی':menuAppearance.emoji_mode==='subtle'?'ایموجی ظریف':'ایموجی متنوع'}</span>
+                </div>
               </form>
             </div>
             <div className="panel page-panel">
