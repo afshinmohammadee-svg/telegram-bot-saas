@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { currentUser, db, json, sha256 } from "../_lib/server.js";
+import { currentUser, db, json, sha256, telegram } from "../_lib/server.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
@@ -19,7 +19,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
        VALUES ($1,$2,now()+interval '10 minutes')`,
       [user.id, sha256(token)],
     );
-    const username = (process.env.MANAGEMENT_BOT_USERNAME ?? "modirbimebot").replace(/^@/, "");
+    // Resolve the username from the exact bot token configured in this deployment.
+    // Never use a hard-coded/default username: it can send Preview customers to the
+    // legacy Vercel/Production bot even when Preview has a different central bot token.
+    const managementToken = process.env.MANAGEMENT_BOT_TOKEN;
+    if (!managementToken) {
+      return json(res, 503, { error: "ربات مرکزی این محیط هنوز پیکربندی نشده است." });
+    }
+    const identity = await telegram<{ id: number; username?: string }>(managementToken, "getMe");
+    const username = (identity.username ?? "").replace(/^@/, "");
+    if (!/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+      return json(res, 503, { error: "نام کاربری ربات مرکزی از تلگرام دریافت نشد؛ تنظیمات ربات را بررسی کن." });
+    }
     return json(res, 201, {
       url: `https://t.me/${username}?start=${token}`,
       expiresInSeconds: 600,
