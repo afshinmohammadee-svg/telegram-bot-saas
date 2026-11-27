@@ -9,7 +9,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "GET") {
       const result = await db.query(
-        `SELECT l.id,l.user_id,l.plan_id,l.status,l.starts_at,l.expires_at,l.notes,l.created_at,
+        `SELECT l.id,l.user_id,l.plan_id,CASE WHEN l.status='active' AND l.expires_at<=now() THEN 'expired' ELSE l.status END AS status,l.starts_at,l.expires_at,l.notes,l.created_at,
                 u.name AS user_name,u.email AS user_email,p.name AS plan_name,p.code AS plan_code
            FROM licenses l
            LEFT JOIN "user" u ON u.id=l.user_id
@@ -46,7 +46,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const start = new Date();
         const expiry = new Date(start.getTime() + Number(plan.duration_days) * 86400000);
         await client.query(
-          "UPDATE licenses SET status='expired',updated_at=now() WHERE user_id=$1 AND status='active'",
+          "UPDATE licenses SET status='revoked',updated_at=now() WHERE user_id=$1 AND status='active'",
           [userId],
         );
         const inserted = await client.query(
@@ -90,6 +90,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const client = await db.connect();
       try {
         await client.query("BEGIN");
+        const current = await client.query("SELECT expires_at FROM licenses WHERE id=$1 FOR UPDATE", [id]);
+        if (!current.rowCount) {
+          await client.query("ROLLBACK");
+          return json(res, 404, { error: "لایسنس پیدا نشد." });
+        }
+        if (status === "active" && new Date(current.rows[0].expires_at).getTime() <= Date.now()) {
+          await client.query("UPDATE licenses SET status='expired',updated_at=now() WHERE id=$1", [id]);
+          await client.query("COMMIT");
+          return json(res, 409, { error: "اعتبار این لایسنس تمام شده و قابل فعال‌سازی مجدد نیست؛ لایسنس جدید صادر کن." });
+        }
         const updated = await client.query(
           "UPDATE licenses SET status=$2,updated_at=now() WHERE id=$1 RETURNING id,user_id,expires_at",
           [id,status],
