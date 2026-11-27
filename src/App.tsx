@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
-  Activity, Bot, CalendarClock, ChevronDown, CircleHelp, Command, LayoutDashboard,
+  Bot, CalendarClock, ChevronDown, CircleHelp, Command, LayoutDashboard,
   MessageCircle, Moon, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck,
   Sun, Users, Zap, RefreshCw, Trash2, Power, X, LoaderCircle
 } from 'lucide-react'
