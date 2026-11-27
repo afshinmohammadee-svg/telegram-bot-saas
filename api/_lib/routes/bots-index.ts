@@ -33,7 +33,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         let currentUrl: URL;
         try { currentUrl = new URL(current.url); } catch { return json(res, 409, { error: "نشانی وبهوک فعلی معتبر نیست؛ تغییری انجام نشد." }); }
         const configured = new URL(appUrl);
-        if (currentUrl.host !== configured.host || currentUrl.pathname !== "/api/telegram/webhook") return json(res, 409, { error: "این ربات به نشانی دیگری متصل است؛ وبهوک تغییر داده نشد." });
+        const alreadyOnPreview = currentUrl.host === configured.host && currentUrl.pathname === "/api/telegram/webhook";
+        // Only permit the explicitly identified legacy Vercel Preview endpoint to be migrated.
+        // Never move webhooks from production or arbitrary third-party hosts.
+        const knownLegacyPreview = currentUrl.hostname === "telegram-bot-saas-git-feat-license-customer-menu-a5fd88-afshin7.vercel.app"
+          && currentUrl.pathname === "/api/telegram/webhook";
+        const previewDestination = configured.hostname === "telegram-bot-saas-app-preview.up.railway.app";
+        if (!alreadyOnPreview && !(knownLegacyPreview && previewDestination)) return json(res, 409, { error: "این ربات به نشانی دیگری متصل است؛ وبهوک تغییر داده نشد." });
       }
       const webhookUrl = new URL(appUrl + "/api/telegram/webhook");
       webhookUrl.searchParams.set("botId", botId);
