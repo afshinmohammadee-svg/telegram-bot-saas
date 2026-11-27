@@ -84,6 +84,26 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
         const data = await api<{ rules: Rule[] }>('/api/auto-replies')
         setRules(data.rules)
       }
+      if (active === 'مدیریت کاربران' && isSuperAdmin) {
+        const data = await api<{ users: AdminUser[] }>('/api/admin/users')
+        setAdminUsers(data.users)
+      }
+      if (active === 'مدیریت لایسنس' && isSuperAdmin) {
+        const [plansData, licensesData, usersData] = await Promise.all([
+          api<{ plans: LicensePlan[] }>('/api/admin/license-plans'),
+          api<{ licenses: LicenseItem[] }>('/api/admin/licenses'),
+          api<{ users: AdminUser[] }>('/api/admin/users'),
+        ])
+        setLicensePlans(plansData.plans)
+        setLicenseItems(licensesData.licenses)
+        const customers = usersData.users.filter(user => user.role !== 'super_admin')
+        setAdminUsers(customers)
+        setLicenseDraft(current => ({
+          ...current,
+          userId: current.userId || customers[0]?.id || '',
+          planId: current.planId || plansData.plans.find(plan => plan.is_active)?.id || '',
+        }))
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'خطا در دریافت اطلاعات')
     }
