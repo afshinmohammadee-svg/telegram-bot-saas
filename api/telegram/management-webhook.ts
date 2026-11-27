@@ -185,7 +185,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       await send(token, chatId, `سلام ${account.rows[0].name}، به مدیریت تلگرام‌یار خوش آمدی.\nاز دکمه‌های پایین برای مدیریت حساب خودت استفاده کن.`, customerKeyboard);
     } else if (["/status", "📊 وضعیت لایسنس"].includes(command)) {
       const result = await db.query(
-        `SELECT status,starts_at,expires_at FROM licenses
+        `SELECT CASE WHEN status='active' AND expires_at<=now() THEN 'expired' ELSE status END AS status,starts_at,expires_at FROM licenses
           WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`,
         [account.rows[0].id],
       );
