@@ -253,7 +253,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         await send(token,chatId,lines.length?"📋 منوهای ثبت‌شده:\n"+lines.join("\n"):"هنوز منویی ثبت نشده است.",homeKeyboard);
         return json(res,200,{ok:true});
       }
-      if (rawInput === "🖼 تنظیم بنر") { await saveSession("banner_wait",{}); await send(token,chatId,"عکس بنر صفحه اصلی را همین‌جا ارسال کن. می‌توانی کپشن هم برای آن بنویسی؛ برای لغو /cancel را بفرست."); return json(res,200,{ok:true}); }
+      if (rawInput === "🖼 تنظیم بنر") { await saveSession("banner_wait",{}); await send(token,chatId,"عکس بنر صفحه اصلی را همین‌جا ارسال کن. متن روی بنر از بخش «متن خوشامدگویی» در پنل تنظیم می‌شود؛ برای لغو /cancel را بفرست."); return json(res,200,{ok:true}); }
       if (rawInput === "🗑 حذف بنر") { await db.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1",[botId]); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
       if (rawInput === "➕ گزینه اصلی جدید") {
         await saveSession("add_title",{parentId:null});
