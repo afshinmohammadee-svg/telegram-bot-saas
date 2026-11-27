@@ -120,7 +120,7 @@ export default function AuthGate() {
       <div className="auth-session-bar" dir="rtl">
         <span><ShieldCheck size={16}/> وارد شده‌اید: <b>{user.name}</b></span>
         {!isSuperAdmin && (<><button onClick={async()=>{setError("");try{const response=await fetch("/api/telegram/link-challenge",{method:"POST"});const data=await response.json();if(!response.ok)throw new Error(data.error||"ساخت لینک ناموفق بود.");setTelegramLink(data.url);}catch(cause){setError(cause instanceof Error?cause.message:"ساخت لینک اتصال ناموفق بود.");}}}><Bot size={16}/> اتصال حساب مشتری به تلگرام</button>{telegramLink && <a className="auth-telegram-link" href={telegramLink} target="_blank" rel="noreferrer">باز کردن ربات مرکزی و تأیید اتصال</a>}{error && <span className="auth-inline-error" role="alert">{error}</span>}</>)}
-        {isSuperAdmin && <button onClick={()=>{setShowCreate(v=>!v);setError("");setCreated("");}}><UserPlus size={16}/> ایجاد حساب کاربر</button>}
+        
         <button onClick={async()=>{await authClient.signOut();await refetch();}}><LogOut size={16}/> خروج امن</button>
       </div>
       {showCreate && isSuperAdmin && (
@@ -141,7 +141,7 @@ export default function AuthGate() {
           </form>
         </div>
       )}
-      <App isSuperAdmin={isSuperAdmin}/>
+      <App isSuperAdmin={isSuperAdmin} onCreateUser={()=>{setShowCreate(true);setError("");setCreated("");}}/>
     </>
   );
 }
