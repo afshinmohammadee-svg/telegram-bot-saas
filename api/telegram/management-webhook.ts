@@ -1,5 +1,5 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { db, json, sha256, telegram } from "../_lib/server.js";
+import { db, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
 type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string };
@@ -20,8 +20,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const webhookSecret = process.env.MANAGEMENT_BOT_WEBHOOK_SECRET;
   if (!token || !webhookSecret) return json(res, 503, { error: "Management bot is not configured" });
   const suppliedSecret = req.headers["x-telegram-bot-api-secret-token"];
-  if (typeof suppliedSecret !== "string" || suppliedSecret.length !== webhookSecret.length ||
-      !Buffer.from(suppliedSecret).equals(Buffer.from(webhookSecret))) {
+  if (typeof suppliedSecret !== "string" || !safeEqualHex(sha256(suppliedSecret), sha256(webhookSecret))) {
     return json(res, 401, { error: "Unauthorized webhook" });
   }
 
