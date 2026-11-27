@@ -37,6 +37,20 @@ function configuredAdminIds() {
     .split(",").map((value) => value.trim()).filter((value) => /^\d+$/.test(value)));
 }
 
+async function storePhotoFromManagementBot(token: string, fileId: string): Promise<string> {
+  const file = await telegram<{file_path?:string}>(token, "getFile", {file_id:fileId});
+  if (!file.file_path) throw new Error("Telegram photo path is unavailable");
+  const response = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+  if (!response.ok) throw new Error("Could not download management photo");
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize > 8 * 1024 * 1024) throw new Error("Photo exceeds 8 MB limit");
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("Photo is empty or exceeds 8 MB limit");
+  const mime = (response.headers.get("content-type") || "image/jpeg").split(";")[0].toLowerCase();
+  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw new Error("Unsupported photo format");
+  return `tgphoto:${mime}:${bytes.toString("base64")}`;
+}
+
 async function send(token: string, chatId: number, text: string, keyboard?: Record<string, unknown>) {
   await telegram(token, "sendMessage", {
     chat_id: chatId,
@@ -184,6 +198,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const rawInput = (message.text ?? "").trim();
     const photoFileId = message.photo?.[message.photo.length - 1]?.file_id ?? null;
+    const photoPayload = photoFileId ? await storePhotoFromManagementBot(token, photoFileId) : null;
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
     const menuLicense = await db.query(
@@ -304,13 +319,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (menuSession.step === "banner_wait") {
-        if (!photoFileId) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
-        await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoFileId]);
+        if (!photoPayload) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
+        await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoPayload]);
         await saveSession("home",{},botId); await send(token,chatId,"✅ بنر صفحه اصلی ذخیره شد.",homeKeyboard); return json(res,200,{ok:true});
       }
       if (menuSession.step === "add_content") {
-        if (menuSession.draft?.responseType === "photo" && !photoFileId) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(menuSession.draft?.responseType === "photo" ? (photoFileId ?? "") : rawInput).trim().slice(0,4000);
+        if (menuSession.draft?.responseType === "photo" && !photoPayload) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+        const value=(menuSession.draft?.responseType === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
         if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
         await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
         await saveSession("home",{},botId);
@@ -338,8 +353,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (menuSession.step === "edit_content") {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
-        if (type === "photo" && !photoFileId) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(type === "photo" ? (photoFileId ?? "") : rawInput).trim().slice(0,4000);
+        if (type === "photo" && !photoPayload) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+        const value=(type === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
         if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
         await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,description=CASE WHEN $3='photo' THEN $5 ELSE description END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value,mediaCaption||null]);
         await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
