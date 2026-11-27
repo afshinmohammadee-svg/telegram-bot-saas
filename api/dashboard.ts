@@ -1,7 +1,9 @@
+import visitorsHandler from "./_lib/visitors.js";
 import type { ApiRequest, ApiResponse } from "./_lib/server.js";
 import { db, json, requireUser, subscriptionActive } from "./_lib/server.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  if (req.query.resource === "visitors") return visitorsHandler(req,res);
   if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
   try {
     const user = await requireUser(req, res);
