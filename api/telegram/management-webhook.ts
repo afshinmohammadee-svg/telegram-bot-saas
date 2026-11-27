@@ -179,7 +179,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       else await send(token, chatId, `📊 وضعیت لایسنس: ${license.status}\nشروع: ${license.starts_at ? new Date(license.starts_at).toLocaleDateString("fa-IR") : "—"}\nانقضا: ${license.expires_at ? new Date(license.expires_at).toLocaleDateString("fa-IR") : "—"}`, customerKeyboard);
     } else if (["/bots", "🤖 ربات‌های من"].includes(command)) {
       const result = await db.query(
-        "SELECT name,username,status FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 30",
+        "SELECT display_name,username,status FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 30",
         [account.rows[0].id],
       );
       const lines = result.rows.map((bot: {name:string;username:string|null;status:string}) =>
