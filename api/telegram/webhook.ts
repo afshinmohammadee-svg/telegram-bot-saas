@@ -70,11 +70,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               // Back returns to the menu that directly contained this item.
               // Main remains a separate action that always returns to the root menu.
               const backTarget = item.parent_id ?? "root";
-              const keyboard = [
-                [{text:"⬅️ بازگشت",callback_data:"back:"+backTarget}],
-                [{text:"🏠 منوی اصلی",callback_data:"main:root"}],
-              ];
-              const replyMarkup = {reply_markup:{inline_keyboard:keyboard}};
+              const keyboard = {
+                keyboard: [[{text:"⬅️ بازگشت"}],[{text:"🏠 منوی اصلی"}]],
+                resize_keyboard: true,
+                is_persistent: true,
+              };
+              const replyMarkup = {reply_markup:keyboard};
               if (item.response_type === "photo") {
                 await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
               } else if (item.response_type === "document") {
