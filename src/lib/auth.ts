@@ -40,8 +40,6 @@ export const auth = betterAuth({
       emailVerified: "email_verified",
       createdAt: "created_at",
       updatedAt: "updated_at",
-      banReason: "ban_reason",
-      banExpires: "ban_expires",
     },
   },
   session: {
@@ -52,7 +50,6 @@ export const auth = betterAuth({
       ipAddress: "ip_address",
       userAgent: "user_agent",
       userId: "user_id",
-      impersonatedBy: "impersonated_by",
     },
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
@@ -93,6 +90,19 @@ export const auth = betterAuth({
       ac: authAccess,
       roles: authRoles,
       defaultRole: "user",
+      schema: {
+        user: {
+          fields: {
+            banReason: "ban_reason",
+            banExpires: "ban_expires",
+          },
+        },
+        session: {
+          fields: {
+            impersonatedBy: "impersonated_by",
+          },
+        },
+      },
     }),
   ],
 });
