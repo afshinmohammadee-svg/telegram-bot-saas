@@ -229,7 +229,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (text.startsWith("/start")) {
-      await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,null);
+      const token = decryptToken(bot.encrypted_token);
+      const startPayload = text.match(/^\/start(?:@[A-Za-z0-9_]+)?(?:\\s+([A-Za-z0-9_-]{1,64}))?/i)?.[1];
+      let targetMenuId: string | null = null;
+      if (startPayload) {
+        const startLink = await db.query(
+          `SELECT menu_id FROM bot_start_links
+            WHERE bot_id=$1 AND token_hash=$2 AND is_active=true LIMIT 1`,
+          [bot.id, sha256(startPayload)],
+        );
+        if (startLink.rowCount) targetMenuId = startLink.rows[0].menu_id ?? null;
+      }
+      await showMenu(token,bot.id,message.chat.id,targetMenuId);
       return json(res, 200, { ok: true, stored: true });
     }
     if (text) {
