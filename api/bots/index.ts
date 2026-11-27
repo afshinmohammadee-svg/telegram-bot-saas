@@ -20,6 +20,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const token = String(bodyOf(req).token ?? "").trim();
     if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) return json(res, 400, { error: "ساختار توکن ربات معتبر نیست." });
 
+    const licenseResult = await db.query(
+      `SELECT limits_snapshot FROM licenses
+        WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now()
+        ORDER BY expires_at DESC LIMIT 1`,
+      [user.id],
+    );
+    if (!licenseResult.rowCount) return json(res, 403, { error: "برای اتصال ربات به لایسنس فعال نیاز دارید." });
+    const botCount = await db.query("SELECT count(*)::int AS total FROM bots WHERE owner_id=$1", [user.id]);
+    const maxBots = licenseResult.rows[0].limits_snapshot?.maxBots ?? 1;
+    if (botCount.rows[0].total >= maxBots) return json(res, 403, { error: "سقف تعداد ربات در لایسنس شما تکمیل شده است." });
+
     const existing = await ownedBot(user.id);
     if (existing) return json(res, 409, { error: "برای این حساب قبلاً یک ربات ثبت شده است." });
 
