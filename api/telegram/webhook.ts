@@ -76,7 +76,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               };
               const replyMarkup = {reply_markup:keyboard};
               if (item.response_type === "photo") {
-                await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
+                await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...(item.description?{caption:String(item.description).slice(0,1000)}:{}),...replyMarkup});
               } else if (item.response_type === "document") {
                 await telegram(token,"sendDocument",{chat_id:callbackChatId,document:content,...replyMarkup});
               } else {
@@ -179,7 +179,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if(text==="⬅️ بازگشت"){let target:string|null=null;if(currentParent){const parent=await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2",[currentParent,bot.id]);target=parent.rows[0]?.parent_id??null;}await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,target,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
       const {rows}=await menuKeyboard(bot.id,currentParent,appearance);
       const selected=rows.find((item,index)=>menuLabel(item,index,appearance)===text);
-      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await telegram(decryptToken(bot.encrypted_token),"sendPhoto",{chat_id:message.chat.id,photo:content,reply_markup:nav.keyboard});else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
+      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await telegram(decryptToken(bot.encrypted_token),"sendPhoto",{chat_id:message.chat.id,photo:content,...(selected.description?{caption:String(selected.description).slice(0,1000)}:{}),reply_markup:nav.keyboard});else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
     }
     if (text) {
       const rules = await db.query(
