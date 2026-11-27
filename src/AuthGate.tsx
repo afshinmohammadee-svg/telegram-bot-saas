@@ -11,7 +11,7 @@ type AuthUser = {
   role?: string;
 };
 
-export default function AuthGate({ onUserCreated }: { onUserCreated?: () => void }) {
+export default function AuthGate() {
   const { data: session, isPending, refetch } = authClient.useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -83,7 +83,7 @@ export default function AuthGate({ onUserCreated }: { onUserCreated?: () => void
       setError(result.error.message || "ساخت حساب انجام نشد.");
     } else {
       setCreated("حساب کاربر با موفقیت ساخته شد.");
-      onUserCreated?.();
+      window.dispatchEvent(new Event('admin-users-refresh'));
       setEmail("");
       setPassword("");
       setName("");
@@ -142,7 +142,7 @@ export default function AuthGate({ onUserCreated }: { onUserCreated?: () => void
           </form>
         </div>
       )}
-      <App isSuperAdmin={isSuperAdmin} onCreateUser={()=>{setShowCreate(true);setError("");setCreated("");}} onUserCreated={onUserCreated}/>
+      <App isSuperAdmin={isSuperAdmin} onCreateUser={()=>{setShowCreate(true);setError("");setCreated("");}}/>
     </>
   );
 }
