@@ -204,7 +204,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
     if (!bot) return
     setQrBusy(true); setError(''); setNotice('')
     try {
-      const result = await api<{ deepLink: string; qrImageUrl: string }>('/api/bots/start-link', {
+      const result = await api<{ deepLink: string; qrImageUrl: string }>('/api/bots?resource=start-link', {
         method: 'POST',
         body: JSON.stringify({ botId: bot.id, sourceLabel: 'پنل مدیریت' }),
       })
