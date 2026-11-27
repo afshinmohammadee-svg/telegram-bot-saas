@@ -6,6 +6,10 @@
       "destination": "/api/bots?resource=menus"
     },
     {
+      "source": "/api/visitors",
+      "destination": "/api/dashboard?resource=visitors"
+    },
+    {
       "source": "/api/auth/:authPath*",
       "destination": "/api/auth/dispatch?__authPath=:authPath*"
     }
