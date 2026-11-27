@@ -39,7 +39,7 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
   const keyboard: Array<Array<Record<string,string>>> = [];
   const emojiFor = (item: typeof rows[number], index: number) => {
     if (appearance.emoji_mode === "off") return "";
-    const icon = item.response_type === "url" ? "↗️" : item.response_type === "submenu" ? "✧" : "◆";
+    const icon = appearance.theme === "minimal" ? "·" : appearance.theme === "vibrant" ? (item.response_type === "url" ? "🔗" : item.response_type === "submenu" ? "📂" : "✨") : (item.response_type === "url" ? "↗️" : item.response_type === "submenu" ? "✧" : "◆");
     if (appearance.emoji_mode === "expressive") {
       const icons = ["💎","✨","🌙","🪄","🖋️","🎯","🛍️","📌"];
       return icons[index % icons.length] + " ";
@@ -55,7 +55,8 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
     })));
   }
 
-  let heading = String(appearance.welcome_title || "به فضای اختصاصی ما خوش آمدید");
+  const themeMark = appearance.theme === "minimal" ? "" : appearance.theme === "vibrant" ? "🌈 " : "✦ ";
+  let heading = themeMark + String(appearance.welcome_title || "به فضای اختصاصی ما خوش آمدید");
   if (parentId) {
     const path = await db.query(
       `WITH RECURSIVE menu_path AS (
@@ -67,7 +68,7 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
       [parentId,botId],
     );
     heading = path.rows.map((item:{title:string})=>item.title).join("  ›  ") || heading;
-    heading = "✦ " + heading;
+    heading = themeMark + heading;
   }
 
   if (parentId) {
