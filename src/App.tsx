@@ -224,7 +224,8 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'تغییر وضعیت ناموفق بود.') }
     finally { setBusy(false) }
   }
-\n  async function toggleRule(rule: Rule) {
+
+  async function toggleRule(rule: Rule) {
     try {
       await api(`/api/auto-replies?id=${rule.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: !rule.is_enabled }) })
       setRules(current => current.map(item => item.id === rule.id ? { ...item, is_enabled: !item.is_enabled } : item))
@@ -244,7 +245,8 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     'بازدیدکنندگان': 'افرادی که به رباتت پیام داده‌اند و /start زده‌اند.',
     'پاسخ‌های خودکار': 'برای پیام‌های ورودی، پاسخ خودکار تعریف کن.',
     'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',
-    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',\n    'مدیریت لایسنس': 'تعریف پلن‌ها، تخصیص لایسنس و کنترل اعتبار مشتریان.',
+    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
+    'مدیریت لایسنس': 'تعریف پلن‌ها، تخصیص لایسنس و کنترل اعتبار مشتریان.',
     'اشتراک و اعتبار': 'وضعیت اشتراک و زمان اعتبار حساب.',
     'تنظیمات': 'تنظیمات پایه پنل و حساب کاربری.',
   }
@@ -338,7 +340,8 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
               </tbody></table>{!licenseItems.length && <div className="empty-inline">هنوز لایسنسی صادر نشده است.</div>}</div>
             </div>
           </section>}
-\n          {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
+
+          {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
 
           {!loading && active === 'تنظیمات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>تنظیمات پنل</h2><p>ترجیحات نمایشی این مرورگر</p></div><Settings className="muted-icon"/></div><div className="settings-row"><div><b>پوسته پنل</b><p>حالت روشن یا تاریک رابط کاربری</p></div><button className="outline-btn" onClick={() => setDark(!dark)}>{dark ? <Sun size={16}/> : <Moon size={16}/>} تغییر به حالت {dark ? 'روشن' : 'تاریک'}</button></div><div className="settings-row"><div><b>امنیت توکن</b><p>توکن ربات در سمت سرور با AES-256-GCM رمزنگاری می‌شود.</p></div><ShieldCheck color="#43c99a"/></div></section>}
 
