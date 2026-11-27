@@ -17,6 +17,7 @@ const adminKeyboard = {
 const customerKeyboard = {
   keyboard: [
     [{ text: "📊 وضعیت لایسنس" }, { text: "🤖 ربات‌های من" }],
+    [{ text: "🧩 مدیریت منو" }],
     [{ text: "⏸ توقف ربات" }, { text: "▶️ فعال‌سازی ربات" }],
     [{ text: "📱 تأیید شماره موبایل", request_contact: true }],
     [{ text: "🔗 راهنمای اتصال" }, { text: "ℹ️ راهنما" }],
@@ -179,6 +180,166 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         await send(token, chatId, "✅ شماره موبایل خودت با موفقیت تأیید و به حساب متصل شد.", customerKeyboard);
       }
       return json(res, 200, { ok: true });
+    }
+
+    const rawInput = (message.text ?? "").trim();
+    const menuManagerButton = "🧩 مدیریت منو";
+    const menuLicense = await db.query(
+      `SELECT features_snapshot FROM licenses WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now() ORDER BY expires_at DESC LIMIT 1`,
+      [account.rows[0].id],
+    );
+    const menuAllowed = menuLicense.rows[0]?.features_snapshot?.menuBuilder === true;
+
+    if (rawInput === menuManagerButton) {
+      if (!menuAllowed) {
+        await send(token,chatId,"امکان مدیریت منو از ربات مرکزی در لایسنس فعلی شما فعال نیست. برای فعال‌سازی با مدیر پلتفرم تماس بگیرید.",customerKeyboard);
+        return json(res,200,{ok:true});
+      }
+      const owned = await db.query("SELECT id,display_name,username FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20",[account.rows[0].id]);
+      if (!owned.rowCount) {
+        await send(token,chatId,"هنوز رباتی به حساب شما متصل نشده است. ابتدا ربات خود را از پنل کاربری متصل کنید.",customerKeyboard);
+      } else if (owned.rowCount === 1) {
+        await db.query(`INSERT INTO management_menu_sessions(telegram_user_id,user_id,bot_id,step,draft,updated_at) VALUES($1,$2,$3,'home','{}'::jsonb,now()) ON CONFLICT(telegram_user_id) DO UPDATE SET user_id=EXCLUDED.user_id,bot_id=EXCLUDED.bot_id,step='home',draft='{}'::jsonb,updated_at=now()`,[telegramId,account.rows[0].id,owned.rows[0].id]);
+        await send(token,chatId,"🧩 مدیریت منوی ربات شما\nاز گزینه‌های زیر برای ثبت یا ویرایش منو استفاده کنید.",{keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true});
+      } else {
+        await db.query(`INSERT INTO management_menu_sessions(telegram_user_id,user_id,bot_id,step,draft,updated_at) VALUES($1,$2,NULL,'choose_bot','{}'::jsonb,now()) ON CONFLICT(telegram_user_id) DO UPDATE SET user_id=EXCLUDED.user_id,bot_id=NULL,step='choose_bot',draft='{}'::jsonb,updated_at=now()`,[telegramId,account.rows[0].id]);
+        const buttons = owned.rows.map((b:{display_name:string|null;username:string|null})=>[{text:"🤖 "+(b.username?"@"+b.username:b.display_name||"ربات تلگرام")}]);
+        await send(token,chatId,"کدام ربات را می‌خواهید مدیریت کنید؟",{keyboard:buttons,resize_keyboard:true,is_persistent:true});
+      }
+      return json(res,200,{ok:true});
+    }
+
+    const menuSessionResult = await db.query(
+      "SELECT bot_id,step,draft FROM management_menu_sessions WHERE telegram_user_id=$1 AND user_id=$2 LIMIT 1",
+      [telegramId,account.rows[0].id],
+    );
+    const menuSession = menuSessionResult.rows[0];
+    if (menuSession && rawInput !== "/cancel" && rawInput !== "⬅️ بازگشت به پنل") {
+      if (!menuAllowed) {
+        await db.query("DELETE FROM management_menu_sessions WHERE telegram_user_id=$1",[telegramId]);
+        await send(token,chatId,"دسترسی مدیریت منو در لایسنس شما فعال نیست.",customerKeyboard);
+        return json(res,200,{ok:true});
+      }
+      let draft = (menuSession.draft ?? {}) as Record<string,any>;
+      let botId = menuSession.bot_id as string|null;
+      const saveSession = async (step:string,nextDraft:Record<string,any>,nextBotId=botId) => {
+        await db.query("UPDATE management_menu_sessions SET bot_id=$3,step=$4,draft=$5::jsonb,updated_at=now() WHERE telegram_user_id=$1 AND user_id=$2",[telegramId,account.rows[0].id,nextBotId,step,JSON.stringify(nextDraft)]);
+      };
+      const homeKeyboard = {keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true};
+      if (menuSession.step === "choose_bot") {
+        const owned = await db.query("SELECT id,display_name,username FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20",[account.rows[0].id]);
+        const selected = owned.rows.find((b:{display_name:string|null;username:string|null})=>"🤖 "+(b.username?"@"+b.username:b.display_name||"ربات تلگرام")===rawInput);
+        if (!selected) { await send(token,chatId,"لطفاً یکی از ربات‌های نمایش‌داده‌شده را انتخاب کنید."); return json(res,200,{ok:true}); }
+        botId=selected.id;
+        await saveSession("home",{},botId);
+        await send(token,chatId,"ربات انتخاب شد. عملیات موردنظر را انتخاب کنید.",homeKeyboard);
+        return json(res,200,{ok:true});
+      }
+      if (!botId) {
+        await db.query("DELETE FROM management_menu_sessions WHERE telegram_user_id=$1",[telegramId]);
+        await send(token,chatId,"نشست مدیریت منو منقضی شد. دوباره «مدیریت منو» را انتخاب کنید.",customerKeyboard);
+        return json(res,200,{ok:true});
+      }
+      if (rawInput === "⬅️ بازگشت به پنل") {
+        await db.query("DELETE FROM management_menu_sessions WHERE telegram_user_id=$1",[telegramId]);
+        await send(token,chatId,"به پنل مدیریت حساب برگشتید.",customerKeyboard);
+        return json(res,200,{ok:true});
+      }
+      if (rawInput === "📋 فهرست منوها") {
+        const menus=await db.query("SELECT title,parent_id,response_type,is_active FROM bot_menus WHERE bot_id=$1 ORDER BY parent_id NULLS FIRST,sort_order,title LIMIT 80",[botId]);
+        const lines=menus.rows.map((m:{title:string;parent_id:string|null;response_type:string;is_active:boolean})=>(m.parent_id?"  ↳ ":"• ")+m.title+" ["+m.response_type+"]"+(m.is_active?"":" (غیرفعال)"));
+        await send(token,chatId,lines.length?"📋 منوهای ثبت‌شده:\n"+lines.join("\n"):"هنوز منویی ثبت نشده است.",homeKeyboard);
+        return json(res,200,{ok:true});
+      }
+      if (rawInput === "➕ گزینه اصلی جدید") {
+        await saveSession("add_title",{parentId:null});
+        await send(token,chatId,"عنوان گزینه اصلی را ارسال کنید (حداکثر ۱۲۰ نویسه). برای لغو /cancel را بفرستید.");
+        return json(res,200,{ok:true});
+      }
+      if (rawInput === "➕ زیرمنوی جدید") {
+        const parents=await db.query("SELECT id,title FROM bot_menus WHERE bot_id=$1 AND is_active=true ORDER BY sort_order,title LIMIT 60",[botId]);
+        if(!parents.rowCount){await send(token,chatId,"ابتدا یک گزینه اصلی ایجاد کنید.",homeKeyboard);return json(res,200,{ok:true});}
+        await saveSession("submenu_parent",{});
+        await send(token,chatId,"گزینه والد زیرمنوی جدید را انتخاب کنید.",{keyboard:parents.rows.map((m:{title:string})=>[{text:m.title}]),resize_keyboard:true,is_persistent:true});
+        return json(res,200,{ok:true});
+      }
+      if (rawInput === "✏️ ویرایش منو") {
+        const menus=await db.query("SELECT id,title,parent_id FROM bot_menus WHERE bot_id=$1 AND is_active=true ORDER BY sort_order,title LIMIT 60",[botId]);
+        if(!menus.rowCount){await send(token,chatId,"هنوز منویی برای ویرایش وجود ندارد.",homeKeyboard);return json(res,200,{ok:true});}
+        await saveSession("edit_pick",{});
+        await send(token,chatId,"گزینه موردنظر برای ویرایش را انتخاب کنید.",{keyboard:menus.rows.map((m:{title:string;parent_id:string|null})=>[{text:(m.parent_id?"↳ ":"")+m.title}]),resize_keyboard:true,is_persistent:true});
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "submenu_parent") {
+        const parents=await db.query("SELECT id,title FROM bot_menus WHERE bot_id=$1 AND is_active=true ORDER BY sort_order,title LIMIT 60",[botId]);
+        const parent=parents.rows.find((m:{title:string})=>m.title===rawInput);
+        if(!parent){await send(token,chatId,"لطفاً یکی از گزینه‌های والد را انتخاب کنید.");return json(res,200,{ok:true});}
+        await saveSession("add_title",{parentId:parent.id});
+        await send(token,chatId,"عنوان زیرمنوی جدید را ارسال کنید.");
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "add_title") {
+        const title=rawInput.trim().slice(0,120);
+        if(!title){await send(token,chatId,"عنوان نمی‌تواند خالی باشد. دوباره ارسال کنید.");return json(res,200,{ok:true});}
+        await saveSession("add_type",{...draft,title});
+        await send(token,chatId,"نوع گزینه را انتخاب کنید.",{keyboard:[[{text:"📝 متن"},{text:"📂 زیرمنو"}],[{text:"🖼 عکس"},{text:"📎 فایل"}],[{text:"🔗 لینک"},{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true});
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "add_type") {
+        const types:Record<string,string>={"📝 متن":"text","📂 زیرمنو":"submenu","🖼 عکس":"photo","📎 فایل":"document","🔗 لینک":"url"};
+        const responseType=types[rawInput];
+        if(!responseType){await send(token,chatId,"یکی از نوع‌های نمایش‌داده‌شده را انتخاب کنید.");return json(res,200,{ok:true});}
+        if(responseType==="submenu"){
+          await db.query("INSERT INTO bot_menus(bot_id,title,payload,parent_id,response_type,is_active) VALUES($1,$2,$2,$3,'submenu',true)",[botId,draft.title,draft.parentId??null]);
+          await saveSession("home",{},botId);
+          await send(token,chatId,"✅ زیرمنو ثبت شد.",homeKeyboard);
+        } else {
+          await saveSession("add_content",{...draft,responseType});
+          await send(token,chatId,responseType==="url"?"لینک کامل با https:// را ارسال کنید.":responseType==="photo"?"شناسه فایل عکس تلگرام (file_id) را ارسال کنید.":responseType==="document"?"شناسه فایل سند تلگرام (file_id) را ارسال کنید.":"متن پاسخ این گزینه را ارسال کنید.");
+        }
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "add_content") {
+        const value=rawInput.trim().slice(0,4000);
+        if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
+        await db.query("INSERT INTO bot_menus(bot_id,title,payload,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,true)",[botId,draft.title,value,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
+        await saveSession("home",{},botId);
+        await send(token,chatId,"✅ گزینه منو با موفقیت ثبت شد.",homeKeyboard);
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "edit_pick") {
+        const menus=await db.query("SELECT id,title,parent_id FROM bot_menus WHERE bot_id=$1 AND is_active=true ORDER BY sort_order,title LIMIT 60",[botId]);
+        const selected=menus.rows.find((m:{title:string;parent_id:string|null})=>(m.parent_id?"↳ ":"")+m.title===rawInput);
+        if(!selected){await send(token,chatId,"لطفاً یکی از منوهای فهرست را انتخاب کنید.");return json(res,200,{ok:true});}
+        await saveSession("edit_action",{menuId:selected.id});
+        await send(token,chatId,"چه تغییری اعمال شود؟",{keyboard:[[{text:"✏️ تغییر عنوان"},{text:"📝 تغییر پاسخ"}],[{text:"⏸ غیرفعال‌سازی گزینه"},{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true});
+        return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "edit_action") {
+        if(rawInput==="✏️ تغییر عنوان"){await saveSession("edit_title",draft);await send(token,chatId,"عنوان جدید را ارسال کنید.");return json(res,200,{ok:true});}
+        if(rawInput==="📝 تغییر پاسخ"){await saveSession("edit_content",draft);await send(token,chatId,"پاسخ جدید یا file_id رسانه را ارسال کنید.");return json(res,200,{ok:true});}
+        if(rawInput==="⏸ غیرفعال‌سازی گزینه"){await db.query("UPDATE bot_menus SET is_active=false,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);await saveSession("home",{},botId);await send(token,chatId,"گزینه منو غیرفعال شد.",homeKeyboard);return json(res,200,{ok:true});}
+        await send(token,chatId,"یکی از عملیات نمایش‌داده‌شده را انتخاب کنید.");return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "edit_title") {
+        await db.query("UPDATE bot_menus SET title=$3,payload=CASE WHEN response_type='text' THEN $3 ELSE payload END,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,rawInput.trim().slice(0,120)]);
+        await saveSession("home",{},botId);await send(token,chatId,"✅ عنوان منو تغییر کرد.",homeKeyboard);return json(res,200,{ok:true});
+      }
+      if (menuSession.step === "edit_content") {
+        const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
+        const type=current.rows[0]?.response_type;
+        const value=rawInput.trim().slice(0,4000);
+        if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
+        await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value]);
+        await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
+      }
+      await send(token,chatId,"از گزینه‌های مدیریت منو استفاده کنید.",homeKeyboard);
+      return json(res,200,{ok:true});
+    }
+    if (rawInput === "/cancel") {
+      await db.query("DELETE FROM management_menu_sessions WHERE telegram_user_id=$1",[telegramId]);
+      await send(token,chatId,"عملیات مدیریت منو لغو شد.",customerKeyboard);
+      return json(res,200,{ok:true});
     }
 
     if (["/start", "/help", "ℹ️ راهنما"].includes(command)) {
