@@ -1,5 +1,5 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { json, requireUser, safeEqualHex, sha256, telegram } from "../_lib/server.js";
+import { json, requireUser, telegram } from "../_lib/server.js";
 
 function isPreview() {
   return process.env.VERCEL_ENV === "preview" ||
