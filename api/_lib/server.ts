@@ -103,10 +103,26 @@ export async function ownedBot(userId: string, botId?: string) {
   return result.rows[0] ?? null;
 }
 
+// License instances are the source of truth. Legacy subscriptions are consulted
+// only for accounts that have never received a license record.
 export async function subscriptionActive(userId: string) {
-  const result = await db.query(
+  const license = await db.query(
+    `SELECT expires_at FROM licenses
+      WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now()
+      ORDER BY expires_at DESC LIMIT 1`,
+    [userId],
+  );
+  if (license.rowCount) return license.rows[0];
+
+  const hasLicenseHistory = await db.query(
+    "SELECT 1 FROM licenses WHERE user_id=$1 LIMIT 1",
+    [userId],
+  );
+  if (hasLicenseHistory.rowCount) return null;
+
+  const legacy = await db.query(
     "SELECT expires_at FROM subscriptions WHERE user_id=$1 AND starts_at<=now() AND expires_at>now() LIMIT 1",
     [userId],
   );
-  return result.rows[0] ?? null;
+  return legacy.rows[0] ?? null;
 }
