@@ -35,7 +35,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—'
 function jalaliToGregorian(input: string): string | null {
-  const match = input.trim().match(/^(\\d{4})[\\/-](\\d{1,2})[\\/-](\\d{1,2})$/)
+  const match = input.trim().match(/^(\d{4})[\\/-](\d{1,2})[\\/-](\d{1,2})$/)
   if (!match) return null
   const jy=Number(match[1]), jm=Number(match[2]), jd=Number(match[3])
   if (jy<1300 || jm<1 || jm>12 || jd<1 || jd>31) return null
@@ -52,10 +52,10 @@ function jalaliToGregorian(input: string): string | null {
   const check=new Date(out+'T12:00:00Z')
   if(!Number.isFinite(check.getTime()) || check.toISOString().slice(0,10)!==out) return null
   const shown=new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'}).format(check)
-  const parts=shown.match(/(\\d+)/g)?.map(Number)
+  const parts=shown.match(/(\d+)/g)?.map(Number)
   return parts && parts[0]===jy && parts[1]===jm && parts[2]===jd ? out : null
 }
-const gregorianToJalali = (value?: string | null) => value ? new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'UTC'}).format(new Date(value)).replace(/\\u200e/g,'') : ''
+const gregorianToJalali = (value?: string | null) => value ? new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'UTC'}).format(new Date(value)).replace(/\u200e/g,'') : ''
 const fullName = (item: { first_name?: string | null; last_name?: string | null; username?: string | null }) => [item.first_name, item.last_name].filter(Boolean).join(' ') || (item.username ? '@' + item.username : 'کاربر تلگرام')
 
 export default function App({ isSuperAdmin = false, onCreateUser, onUserCreated }: { isSuperAdmin?: boolean; onCreateUser?: () => void; onUserCreated?: () => void }) {
