@@ -214,7 +214,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       [telegramId,account.rows[0].id],
     );
     const menuSession = menuSessionResult.rows[0];
-    if (menuSession && rawInput !== "/cancel" && rawInput !== "⬅️ بازگشت به پنل") {
+    if (menuSession && rawInput !== "/cancel") {
       if (!menuAllowed) {
         await db.query("DELETE FROM management_menu_sessions WHERE telegram_user_id=$1",[telegramId]);
         await send(token,chatId,"دسترسی مدیریت منو در لایسنس شما فعال نیست.",customerKeyboard);
