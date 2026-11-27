@@ -1,4 +1,5 @@
 import menuHandler from "../_lib/bot-menus.js";
+import menuAppearanceHandler from "../_lib/bot-menu-appearance.js";
 import { randomBytes } from "node:crypto";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, bodyOf, decryptToken, encryptToken, json, ownedBot, requireUser, sha256, telegram } from "../_lib/server.js";
@@ -8,6 +9,7 @@ type TelegramMe = { id: number; username?: string; first_name?: string };
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     if (req.query.resource === "menus") return menuHandler(req,res);
+    if (req.query.resource === "menu-appearance") return menuAppearanceHandler(req,res);
     const user = await requireUser(req, res);
     if (!user) return;
     if (req.method === "POST" && req.query.resource === "webhook-reconnect") {
