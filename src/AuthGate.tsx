@@ -123,7 +123,7 @@ export default function AuthGate() {
           </form>
         </div>
       )}
-      <App/>
+      <App isSuperAdmin={isSuperAdmin}/>
     </>
   );
 }
