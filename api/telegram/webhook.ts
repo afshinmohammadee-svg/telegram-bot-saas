@@ -10,84 +10,12 @@ function escapeHtml(value: string) {
   return value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-async function showMenu(token: string, botId: string, chatId: number, parentId: string | null) {
-  const [result, appearanceResult] = await Promise.all([
-    db.query(
-      `SELECT id,title,description,parent_id,response_type,response_content,target_url
-         FROM bot_menus WHERE bot_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid AND is_active=true
-        ORDER BY sort_order,title LIMIT 100`,
-      [botId,parentId],
-    ),
-    db.query(
-      "SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id FROM bot_menu_appearance WHERE bot_id=$1",
-      [botId],
-    ),
-  ]);
-  const appearance = appearanceResult.rows[0] ?? {
-    theme:"luxury_modern",button_columns:1,emoji_mode:"subtle",
-    welcome_title:"به فضای اختصاصی ما خوش آمدید",
-    welcome_text:"برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",
-    banner_file_id:null,
-  };
-  const rows = result.rows as Array<{id:string;title:string;description:string|null;parent_id:string|null;response_type:string;response_content:string|null;target_url:string|null}>;
-  if (!rows.length) {
-    await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است."});
-    return;
-  }
-
-  const columns = Math.max(1,Math.min(3,Number(appearance.button_columns)||1));
-  const keyboard: Array<Array<Record<string,string>>> = [];
-  const emojiFor = (item: typeof rows[number], index: number) => {
-    if (appearance.emoji_mode === "off") return "";
-    const icon = appearance.theme === "minimal" ? "·" : appearance.theme === "vibrant" ? (item.response_type === "url" ? "🔗" : item.response_type === "submenu" ? "📂" : "✨") : (item.response_type === "url" ? "↗️" : item.response_type === "submenu" ? "✧" : "◆");
-    if (appearance.emoji_mode === "expressive") {
-      const icons = ["💎","✨","🌙","🪄","🖋️","🎯","🛍️","📌"];
-      return icons[index % icons.length] + " ";
-    }
-    return icon + " ";
-  };
-  for (let i=0;i<rows.length;i+=columns) {
-    keyboard.push(rows.slice(i,i+columns).map((item,index) => ({
-      text:(emojiFor(item,i+index)+item.title).slice(0,64),
-      ...(item.response_type === "url" && item.target_url
-        ? { url:item.target_url }
-        : { callback_data:"menu:"+item.id }),
-    })));
-  }
-
-  const themeMark = appearance.theme === "minimal" ? "" : appearance.theme === "vibrant" ? "🌈 " : "✦ ";
-  let heading = themeMark + String(appearance.welcome_title || "به فضای اختصاصی ما خوش آمدید");
-  if (parentId) {
-    const path = await db.query(
-      `WITH RECURSIVE menu_path AS (
-         SELECT id,title,parent_id,0 AS depth FROM bot_menus WHERE id=$1 AND bot_id=$2
-         UNION ALL
-         SELECT p.id,p.title,p.parent_id,c.depth+1 FROM bot_menus p
-         JOIN menu_path c ON c.parent_id=p.id WHERE p.bot_id=$2
-       ) SELECT title FROM menu_path ORDER BY depth DESC`,
-      [parentId,botId],
-    );
-    heading = path.rows.map((item:{title:string})=>item.title).join("  ›  ") || heading;
-    heading = themeMark + heading;
-  }
-
-  if (parentId) {
-    const parent = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId,botId]);
-    keyboard.push([
-      {text:"⬅️ بازگشت",callback_data:"back:"+(parent.rows[0]?.parent_id ?? "root")},
-      {text:"🏠 منوی اصلی",callback_data:"main:root"},
-    ]);
-  }
-  const text = parentId
-    ? "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:")
-    : "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text || "برای ادامه یکی از گزینه‌ها را انتخاب کنید."));
-  if (!parentId && appearance.banner_file_id) {
-    await telegram(token,"sendPhoto",{chat_id:chatId,photo:appearance.banner_file_id,caption:text,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
-  } else {
-    await telegram(token,"sendMessage",{chat_id:chatId,text,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
-  }
-}
-
+type MenuRow = {id:string;title:string;description:string|null;parent_id:string|null;response_type:string;response_content:string|null;target_url:string|null;has_children?:boolean};
+type MenuAppearance = {theme:string;button_columns:number;emoji_mode:string;welcome_title:string;welcome_text:string;banner_file_id:string|null};
+function menuLabel(item:MenuRow,index:number,appearance:MenuAppearance){if(appearance.emoji_mode==="off")return item.title;let icon=appearance.theme==="minimal"?"·":appearance.theme==="vibrant"?(item.response_type==="url"?"🔗":item.response_type==="submenu"?"📂":"✨"):(item.response_type==="url"?"↗️":item.response_type==="submenu"?"✧":"◆");if(appearance.emoji_mode==="expressive"){const icons=["💎","✨","🌙","🪄","🖋️","🎯","🛍️","📌"];icon=icons[index%icons.length];}return(icon?icon+" ":"")+item.title;}
+async function getMenuAppearance(botId:string):Promise<MenuAppearance>{const result=await db.query("SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id FROM bot_menu_appearance WHERE bot_id=$1",[botId]);return result.rows[0]??{theme:"luxury_modern",button_columns:1,emoji_mode:"subtle",welcome_title:"به فضای اختصاصی ما خوش آمدید",welcome_text:"برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",banner_file_id:null};}
+async function menuKeyboard(botId:string,parentId:string|null,appearance:MenuAppearance){const result=await db.query(`SELECT m.id,m.title,m.description,m.parent_id,m.response_type,m.response_content,m.target_url,EXISTS(SELECT 1 FROM bot_menus child WHERE child.parent_id=m.id AND child.bot_id=m.bot_id AND child.is_active=true) AS has_children FROM bot_menus m WHERE m.bot_id=$1 AND m.parent_id IS NOT DISTINCT FROM $2::uuid AND m.is_active=true ORDER BY m.sort_order,m.title LIMIT 100`,[botId,parentId]);const rows=result.rows as MenuRow[];const columns=Math.max(1,Math.min(3,Number(appearance.button_columns)||1));const keyboard:Array<Array<{text:string}>>=[];for(let i=0;i<rows.length;i+=columns)keyboard.push(rows.slice(i,i+columns).map((item,index)=>({text:menuLabel(item,i+index,appearance).slice(0,64)})));if(parentId)keyboard.push([{text:"⬅️ بازگشت"},{text:"🏠 منوی اصلی"}]);return{rows,keyboard:{keyboard,resize_keyboard:true,is_persistent:true,input_field_placeholder:"یکی از گزینه‌ها را انتخاب کنید"}};}
+async function showMenu(token:string,botId:string,chatId:number,parentId:string|null,visitorId?:string){const appearance=await getMenuAppearance(botId);const{rows,keyboard}=await menuKeyboard(botId,parentId,appearance);if(visitorId)await db.query(`INSERT INTO bot_visitor_menu_state(visitor_id,bot_id,current_parent_id,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(visitor_id) DO UPDATE SET bot_id=EXCLUDED.bot_id,current_parent_id=EXCLUDED.current_parent_id,updated_at=now()`,[visitorId,botId,parentId]);if(!rows.length){await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است.",reply_markup:keyboard});return;}const mark=appearance.theme==="minimal"?"":appearance.theme==="vibrant"?"🌈 ":"✦ ";let heading=mark+String(appearance.welcome_title||"به فضای اختصاصی ما خوش آمدید");if(parentId){const path=await db.query(`WITH RECURSIVE menu_path AS (SELECT id,title,parent_id,0 AS depth FROM bot_menus WHERE id=$1 AND bot_id=$2 UNION ALL SELECT p.id,p.title,p.parent_id,c.depth+1 FROM bot_menus p JOIN menu_path c ON c.parent_id=p.id WHERE p.bot_id=$2) SELECT title FROM menu_path ORDER BY depth DESC`,[parentId,botId]);heading=mark+(path.rows.map((x:{title:string})=>x.title).join("  ›  ")||heading);}const caption=parentId?"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:"):"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text||"برای ادامه یکی از گزینه‌ها را انتخاب کنید."));if(!parentId&&appearance.banner_file_id)await telegram(token,"sendPhoto",{chat_id:chatId,photo:appearance.banner_file_id,caption,parse_mode:"HTML",reply_markup:keyboard});else await telegram(token,"sendMessage",{chat_id:chatId,text:caption,parse_mode:"HTML",reply_markup:keyboard});}
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
   const rawId = req.query.botId;
@@ -240,8 +168,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         );
         if (startLink.rowCount) targetMenuId = startLink.rows[0].menu_id ?? null;
       }
-      await showMenu(token,bot.id,message.chat.id,targetMenuId);
+      await showMenu(token,bot.id,message.chat.id,targetMenuId,visitorId);
       return json(res, 200, { ok: true, stored: true });
+    }
+    if (text && !text.startsWith("/")) {
+      const state=await db.query("SELECT current_parent_id FROM bot_visitor_menu_state WHERE visitor_id=$1 AND bot_id=$2 LIMIT 1",[visitorId,bot.id]);
+      const currentParent=state.rows[0]?.current_parent_id??null;
+      const appearance=await getMenuAppearance(bot.id);
+      if(text==="🏠 منوی اصلی"){await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,null,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
+      if(text==="⬅️ بازگشت"){let target:string|null=null;if(currentParent){const parent=await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2",[currentParent,bot.id]);target=parent.rows[0]?.parent_id??null;}await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,target,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
+      const {rows}=await menuKeyboard(bot.id,currentParent,appearance);
+      const selected=rows.find((item,index)=>menuLabel(item,index,appearance)===text);
+      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await telegram(decryptToken(bot.encrypted_token),"sendPhoto",{chat_id:message.chat.id,photo:content,reply_markup:nav.keyboard});else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
     }
     if (text) {
       const rules = await db.query(
