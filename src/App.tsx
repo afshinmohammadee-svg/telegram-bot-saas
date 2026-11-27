@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import {
   Bot, CalendarClock, ChevronDown, CircleHelp, Command, LayoutDashboard,
   MessageCircle, Moon, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck,
-  Sun, Users, Zap, RefreshCw, Trash2, Power, X, LoaderCircle
+  Sun, Users, Zap, RefreshCw, Trash2, Power, X, LoaderCircle, UserCog
 } from 'lucide-react'
 
 type BotInfo = { id: string; username: string | null; display_name: string | null; status: string; last_error?: string | null; connected_at?: string | null }
@@ -11,15 +11,15 @@ type Dashboard = { bot: BotInfo | null; visitors: number; openConversations: num
 type Conversation = { id: string; status: string; unread_count: number; last_message_at: string | null; username: string | null; first_name: string | null; last_name: string | null; telegram_user_id: string; last_message: string | null }
 type Message = { id: string; direction: string; sender_type: string; text_body: string | null; delivery_status: string; created_at: string }
 type Visitor = { id: string; telegram_user_id: string; username: string | null; first_name: string | null; last_name: string | null; language_code: string | null; first_seen_at: string; last_seen_at: string; conversations: number }
-type Rule = { id: string; trigger_text: string; reply_text: string; match_type: string; is_enabled: boolean; created_at: string }
-type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'اشتراک و اعتبار' | 'تنظیمات'
+type Rule = { id: string; trigger_text: string; reply_text: string; match_type: string; is_enabled: boolean; created_at: string }\ntype AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
+type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
 const nav: NavItem[] = [
   { label: 'نمای کلی', icon: LayoutDashboard }, { label: 'گفتگوها', icon: MessageCircle },
   { label: 'بازدیدکنندگان', icon: Users }, { label: 'پاسخ‌های خودکار', icon: Zap },
 ]
 const tools: NavItem[] = [
-  { label: 'مدیریت ربات', icon: Bot }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
+  { label: 'مدیریت ربات', icon: Bot }, { label: 'مدیریت کاربران', icon: UserCog }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
   { label: 'تنظیمات', icon: Settings },
 ]
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -31,7 +31,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 const date = (value?: string | null) => value ? new Date(value).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 const fullName = (item: { first_name?: string | null; last_name?: string | null; username?: string | null }) => [item.first_name, item.last_name].filter(Boolean).join(' ') || (item.username ? '@' + item.username : 'کاربر تلگرام')
 
-export default function App() {
+export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const [dark, setDark] = useState(true)
   const [active, setActive] = useState<Page>('نمای کلی')
   const [mobileNav, setMobileNav] = useState(false)
@@ -51,7 +51,7 @@ export default function App() {
   const [rules, setRules] = useState<Rule[]>([])
   const [trigger, setTrigger] = useState('')
   const [replyText, setReplyText] = useState('')
-  const [matchType, setMatchType] = useState('contains')
+  const [matchType, setMatchType] = useState('contains')\n  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])\n  const [adminExpiry, setAdminExpiry] = useState<Record<string, string>>({})
 
   const refreshDashboard = useCallback(async () => {
     const [dash, botData] = await Promise.all([api<Dashboard>('/api/dashboard'), api<{ bots: BotInfo[] }>('/api/bots')])
@@ -78,7 +78,7 @@ export default function App() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'خطا در دریافت اطلاعات')
     }
-  }, [active, refreshDashboard])
+  }, [active, refreshDashboard, isSuperAdmin])
 
   useEffect(() => {
     let alive = true
@@ -145,7 +145,7 @@ export default function App() {
     finally { setBusy(false) }
   }
 
-  async function toggleRule(rule: Rule) {
+  async function saveExpiry(userId: string) {\n    const expiresAt = adminExpiry[userId]\n    if (!expiresAt) { setError('تاریخ انقضا را انتخاب کن.'); return }\n    setBusy(true); setError('')\n    try {\n      await api('/api/admin/users?id=' + encodeURIComponent(userId), { method: 'PATCH', body: JSON.stringify({ expiresAt }) })\n      setNotice('تاریخ انقضای اشتراک ذخیره شد.')\n      const data = await api<{ users: AdminUser[] }>('/api/admin/users')\n      setAdminUsers(data.users)\n    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره اشتراک ناموفق بود.') }\n    finally { setBusy(false) }\n  }\n\n  async function toggleRule(rule: Rule) {
     try {
       await api(`/api/auto-replies?id=${rule.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: !rule.is_enabled }) })
       setRules(current => current.map(item => item.id === rule.id ? { ...item, is_enabled: !item.is_enabled } : item))
@@ -164,7 +164,7 @@ export default function App() {
     'گفتگوها': 'پیام‌های دریافتی کاربران را ببین و مستقیم پاسخ بده.',
     'بازدیدکنندگان': 'افرادی که به رباتت پیام داده‌اند و /start زده‌اند.',
     'پاسخ‌های خودکار': 'برای پیام‌های ورودی، پاسخ خودکار تعریف کن.',
-    'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',
+    'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',\n    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
     'اشتراک و اعتبار': 'وضعیت اشتراک و زمان اعتبار حساب.',
     'تنظیمات': 'تنظیمات پایه پنل و حساب کاربری.',
   }
@@ -177,7 +177,7 @@ export default function App() {
         <div className="nav-label">منوی اصلی</div>
         <nav>{nav.map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span>{label === 'گفتگوها' && dashboard?.unreadMessages ? <i className="nav-count">{dashboard.unreadMessages}</i> : null}</button>)}</nav>
         <div className="nav-label second">مدیریت</div>
-        <nav>{tools.map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+        <nav>{tools.filter(item => item.label !== 'مدیریت کاربران' || isSuperAdmin).map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
         <div className="sidebar-bottom"><div className="help-card"><div className="help-icon"><CircleHelp size={18}/></div><b>راهنمای شروع</b><p>برای اتصال ربات، از BotFather توکن بگیر و در بخش مدیریت ربات وارد کن.</p><button onClick={() => changePage('مدیریت ربات')}>مدیریت ربات <span>←</span></button></div><div className="profile"><div className="profile-avatar">A</div><div><b>حساب کاربری</b><small>پنل اختصاصی</small></div><MoreHorizontal size={19}/></div></div>
       </aside>
 
@@ -185,7 +185,7 @@ export default function App() {
         <header className="topbar"><div className="top-left"><button className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)}><Command size={19}/></button><div className="breadcrumb">فضای کاری <span>/</span> <b>{active}</b></div></div><div className="top-actions"><div className="searchbox"><Search size={16}/><input placeholder="جستجو..." /></div><button className="icon-btn theme-btn" aria-label="تغییر پوسته" onClick={() => setDark(!dark)}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button><button className="icon-btn" aria-label="بارگذاری مجدد" onClick={() => { setLoading(true); refreshPage().finally(() => setLoading(false)) }}><RefreshCw size={16}/></button><div className="top-avatar">A</div></div></header>
 
         <div className="content">
-          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
+          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && active !== 'مدیریت کاربران' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
           {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}><X size={15}/></button></div>}
           {error && <div className="notice error-notice" role="alert">{error}<button onClick={() => setError('')}><X size={15}/></button></div>}
           {loading ? <div className="loading-state"><LoaderCircle className="spin" size={25}/> در حال دریافت اطلاعات...</div> : null}
@@ -212,6 +212,8 @@ export default function App() {
           {!loading && active === 'بازدیدکنندگان' && <section className="panel page-panel"><div className="panel-heading"><div><h2>بازدیدکنندگان</h2><p>{visitors.length.toLocaleString('fa-IR')} نفر اخیر</p></div><Users className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>کاربر</th><th>شناسه تلگرام</th><th>زبان</th><th>گفتگوها</th><th>آخرین بازدید</th></tr></thead><tbody>{visitors.map(v => <tr key={v.id}><td>{fullName(v)}</td><td dir="ltr">{v.telegram_user_id}</td><td>{v.language_code || '—'}</td><td>{v.conversations.toLocaleString('fa-IR')}</td><td>{date(v.last_seen_at)}</td></tr>)}</tbody></table>{!visitors.length && <div className="empty-inline">هنوز بازدیدکننده‌ای ثبت نشده است. با ارسال /start به ربات، کاربران اینجا نمایش داده می‌شوند.</div>}</div></section>}
 
           {!loading && active === 'پاسخ‌های خودکار' && <section className="page-panel"><div className="panel rule-form-panel"><div className="panel-heading"><div><h2>افزودن پاسخ خودکار</h2><p>با تطبیق متن پیام کاربر، پاسخ تعیین‌شده ارسال می‌شود.</p></div><Zap className="muted-icon"/></div><form className="rule-form" onSubmit={addRule}><label>عبارت محرک<input id="new-rule-trigger" value={trigger} onChange={e => setTrigger(e.target.value)} placeholder="مثلاً قیمت" maxLength={200} required/></label><label>نوع تطبیق<select value={matchType} onChange={e => setMatchType(e.target.value)}><option value="contains">شامل عبارت باشد</option><option value="exact">دقیقاً برابر باشد</option><option value="starts_with">با عبارت شروع شود</option></select></label><label className="wide-field">متن پاسخ<textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="متن پاسخی که ربات ارسال می‌کند..." maxLength={4000} rows={3} required/></label><button className="primary-btn" disabled={busy || !trigger.trim() || !replyText.trim()}><Plus size={16}/> ثبت پاسخ</button></form></div><div className="panel rules-list"><div className="panel-heading"><div><h2>قوانین ثبت‌شده</h2><p>{rules.length.toLocaleString('fa-IR')} پاسخ خودکار</p></div></div>{rules.length ? rules.map(rule => <div className="rule-row" key={rule.id}><div className="rule-copy"><b>{rule.trigger_text}</b><p>{rule.reply_text}</p><small>{rule.match_type === 'exact' ? 'تطبیق دقیق' : rule.match_type === 'starts_with' ? 'شروع با عبارت' : 'شامل عبارت'}</small></div><label className="switch-label"><input type="checkbox" checked={rule.is_enabled} onChange={() => toggleRule(rule)}/><span>{rule.is_enabled ? 'فعال' : 'غیرفعال'}</span></label><button className="icon-btn delete-btn" aria-label="حذف قانون" onClick={() => deleteRule(rule.id)}><Trash2 size={16}/></button></div>) : <div className="empty-inline">هنوز پاسخی تعریف نشده است.</div>}</div></section>}
+
+          {!loading && active === 'مدیریت کاربران' && isSuperAdmin && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اشتراک کاربران</h2><p>برای هر حساب کاربری تاریخ پایان اشتراک را تعیین کن.</p></div><UserCog className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت اشتراک</th><th>تاریخ انقضا</th><th>عملیات</th></tr></thead><tbody>{adminUsers.map(user => <tr key={user.id}><td>{user.name}</td><td dir="ltr">{user.email}</td><td>{user.role === 'super_admin' ? 'مدیر کل' : 'کاربر'}</td><td><span className={user.subscription_active ? 'status-pill good' : 'status-pill'}>{user.subscription_active ? 'فعال' : 'غیرفعال'}</span></td><td>{user.role === 'super_admin' ? '—' : <input aria-label={'تاریخ انقضای ' + user.name} type="date" value={adminExpiry[user.id] || ''} onChange={e => setAdminExpiry(current => ({ ...current, [user.id]: e.target.value }))}/>}</td><td>{user.role !== 'super_admin' && <button className="outline-btn" disabled={busy || !adminExpiry[user.id]} onClick={() => saveExpiry(user.id)}>ذخیره</button>}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="empty-inline">کاربری برای نمایش وجود ندارد.</div>}</div></section>}
 
           {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
 
