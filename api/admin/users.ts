@@ -33,8 +33,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res, 400, { error: "کاربر و تاریخ انقضا را مشخص کن." });
       }
       const expiresAt = new Date(`${expiresAtInput}T23:59:59.999Z`);
-      if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-        return json(res, 400, { error: "تاریخ انقضا باید در آینده باشد." });
+      if (!Number.isFinite(expiresAt.getTime()) || expiresAt.toISOString().slice(0, 10) !== expiresAtInput || expiresAt.getTime() <= Date.now()) {
+        return json(res, 400, { error: "تاریخ انقضا باید یک تاریخ معتبر در آینده باشد." });
       }
       const client = await db.connect();
       try {
