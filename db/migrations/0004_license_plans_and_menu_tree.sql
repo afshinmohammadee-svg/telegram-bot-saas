@@ -42,7 +42,11 @@ ALTER TABLE bot_menus ADD COLUMN IF NOT EXISTS response_type text NOT NULL DEFAU
 ALTER TABLE bot_menus ADD COLUMN IF NOT EXISTS response_content text;
 ALTER TABLE bot_menus ADD COLUMN IF NOT EXISTS target_url text;
 ALTER TABLE bot_menus ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
-CREATE UNIQUE INDEX IF NOT EXISTS bot_menus_id_bot_id_unique_idx ON bot_menus(id,bot_id);
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='bot_menus_id_bot_id_unique') THEN
+    ALTER TABLE bot_menus ADD CONSTRAINT bot_menus_id_bot_id_unique UNIQUE (id,bot_id);
+  END IF;
+END $;
 DO $$ BEGIN
   ALTER TABLE bot_menus ADD CONSTRAINT bot_menus_response_type_check
     CHECK (response_type IN ('text','photo','document','url','submenu')) NOT VALID;
