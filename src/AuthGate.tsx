@@ -31,7 +31,18 @@ export default function AuthGate() {
     try {
       const result = await authClient.signIn.email({ email: email.trim(), password });
       if (result.error) {
-        setError(result.error.message || `خطای ورود (کد: ${result.error.code || "نامشخص"})`);
+        const authError = result.error as unknown as Record<string, unknown>;
+        const ownDetails = Object.fromEntries(
+          Object.getOwnPropertyNames(result.error).map((key) => [key, authError[key]])
+        );
+        const details = [
+          typeof authError.message === "string" ? authError.message : "",
+          typeof authError.status === "number" ? `HTTP ${authError.status}` : "",
+          typeof authError.statusText === "string" ? authError.statusText : "",
+          typeof authError.code === "string" ? `کد: ${authError.code}` : "",
+          Object.keys(ownDetails).length ? JSON.stringify(ownDetails) : "",
+        ].filter(Boolean);
+        setError(details.join(" | ") || "پاسخ ورود ناموفق بود اما جزئیات خطا خالی است؛ لطفاً دوباره تلاش کن.");
       } else {
         await refetch();
       }
