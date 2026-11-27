@@ -172,6 +172,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!message || !sender || message.chat.type !== "private" || sender.is_bot) return json(res, 200, { ok: true });
 
     const text = (message.text ?? "").slice(0, 4096);
+    // Block expired/suspended customers before persisting visitor or conversation activity.
+    const subscription = await subscriptionActive(bot.owner_id);
+    if (!subscription) return json(res, 200, { ok: true, subscriptionInactive: true });
     const accessResult = await db.query(
       `SELECT limits_snapshot FROM licenses
         WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now()
@@ -225,8 +228,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       client.release();
     }
 
-    const subscription = await subscriptionActive(bot.owner_id);
-    if (!subscription) return json(res, 200, { ok: true, stored: true, subscriptionInactive: true });
     if (text.startsWith("/start")) {
       await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,null);
       return json(res, 200, { ok: true, stored: true });
