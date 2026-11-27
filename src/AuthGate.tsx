@@ -28,10 +28,18 @@ export default function AuthGate() {
     event.preventDefault();
     setBusy(true);
     setError("");
-    const result = await authClient.signIn.email({ email, password });
-    if (result.error) setError("ایمیل یا رمز عبور صحیح نیست.");
-    else await refetch();
-    setBusy(false);
+    try {
+      const result = await authClient.signIn.email({ email: email.trim(), password });
+      if (result.error) {
+        setError(result.error.message || `خطای ورود (کد: ${result.error.code || "نامشخص"})`);
+      } else {
+        await refetch();
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "ارتباط با سرویس ورود برقرار نشد.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createAccount(event: FormEvent) {
