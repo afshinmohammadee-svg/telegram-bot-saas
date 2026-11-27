@@ -11,7 +11,8 @@ type Dashboard = { bot: BotInfo | null; visitors: number; openConversations: num
 type Conversation = { id: string; status: string; unread_count: number; last_message_at: string | null; username: string | null; first_name: string | null; last_name: string | null; telegram_user_id: string; last_message: string | null }
 type Message = { id: string; direction: string; sender_type: string; text_body: string | null; delivery_status: string; created_at: string }
 type Visitor = { id: string; telegram_user_id: string; username: string | null; first_name: string | null; last_name: string | null; language_code: string | null; first_seen_at: string; last_seen_at: string; conversations: number }
-type Rule = { id: string; trigger_text: string; reply_text: string; match_type: string; is_enabled: boolean; created_at: string }\ntype AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
+type Rule = { id: string; trigger_text: string; reply_text: string; match_type: string; is_enabled: boolean; created_at: string }
+type AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
 type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
 const nav: NavItem[] = [
@@ -51,7 +52,9 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
   const [rules, setRules] = useState<Rule[]>([])
   const [trigger, setTrigger] = useState('')
   const [replyText, setReplyText] = useState('')
-  const [matchType, setMatchType] = useState('contains')\n  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])\n  const [adminExpiry, setAdminExpiry] = useState<Record<string, string>>({})
+  const [matchType, setMatchType] = useState('contains')
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
+  const [adminExpiry, setAdminExpiry] = useState<Record<string, string>>({})
 
   const refreshDashboard = useCallback(async () => {
     const [dash, botData] = await Promise.all([api<Dashboard>('/api/dashboard'), api<{ bots: BotInfo[] }>('/api/bots')])
@@ -145,7 +148,20 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     finally { setBusy(false) }
   }
 
-  async function saveExpiry(userId: string) {\n    const expiresAt = adminExpiry[userId]\n    if (!expiresAt) { setError('تاریخ انقضا را انتخاب کن.'); return }\n    setBusy(true); setError('')\n    try {\n      await api('/api/admin/users?id=' + encodeURIComponent(userId), { method: 'PATCH', body: JSON.stringify({ expiresAt }) })\n      setNotice('تاریخ انقضای اشتراک ذخیره شد.')\n      const data = await api<{ users: AdminUser[] }>('/api/admin/users')\n      setAdminUsers(data.users)\n    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره اشتراک ناموفق بود.') }\n    finally { setBusy(false) }\n  }\n\n  async function toggleRule(rule: Rule) {
+  async function saveExpiry(userId: string) {
+    const expiresAt = adminExpiry[userId]
+    if (!expiresAt) { setError('تاریخ انقضا را انتخاب کن.'); return }
+    setBusy(true); setError('')
+    try {
+      await api('/api/admin/users?id=' + encodeURIComponent(userId), { method: 'PATCH', body: JSON.stringify({ expiresAt }) })
+      setNotice('تاریخ انقضای اشتراک ذخیره شد.')
+      const data = await api<{ users: AdminUser[] }>('/api/admin/users')
+      setAdminUsers(data.users)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره اشتراک ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function toggleRule(rule: Rule) {
     try {
       await api(`/api/auto-replies?id=${rule.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: !rule.is_enabled }) })
       setRules(current => current.map(item => item.id === rule.id ? { ...item, is_enabled: !item.is_enabled } : item))
@@ -164,7 +180,8 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     'گفتگوها': 'پیام‌های دریافتی کاربران را ببین و مستقیم پاسخ بده.',
     'بازدیدکنندگان': 'افرادی که به رباتت پیام داده‌اند و /start زده‌اند.',
     'پاسخ‌های خودکار': 'برای پیام‌های ورودی، پاسخ خودکار تعریف کن.',
-    'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',\n    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
+    'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',
+    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
     'اشتراک و اعتبار': 'وضعیت اشتراک و زمان اعتبار حساب.',
     'تنظیمات': 'تنظیمات پایه پنل و حساب کاربری.',
   }
