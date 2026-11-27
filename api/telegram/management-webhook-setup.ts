@@ -3,7 +3,8 @@ import { json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
-  if (process.env.VERCEL_ENV !== "preview") return json(res, 403, { error: "راه‌اندازی وبهوک فقط در Preview مجاز است." });
+  const isPreview = process.env.VERCEL_ENV === "preview" || process.env.RAILWAY_ENVIRONMENT_NAME === "preview" || process.env.DEPLOY_ENV === "preview";
+  if (!isPreview) return json(res, 403, { error: "راه‌اندازی وبهوک فقط در محیط آزمایشی مجاز است." });
 
   const token = process.env.MANAGEMENT_BOT_TOKEN;
   const secret = process.env.MANAGEMENT_BOT_WEBHOOK_SECRET;
@@ -14,15 +15,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const rawAppUrl = process.env.APP_URL ?? "";
-  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  const bypass = process.env.VERCEL_ENV === "preview" ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() : undefined;
   let appUrl: URL;
   try { appUrl = new URL(rawAppUrl); } catch { return json(res, 503, { error: "APP_URL معتبر برای Preview تنظیم نشده است." }); }
-  if (appUrl.protocol !== "https:" || !appUrl.hostname.endsWith(".vercel.app") || !bypass) {
-    return json(res, 503, { error: "نشانی یا دسترسی امن Preview تنظیم نشده است." });
+  if (appUrl.protocol !== "https:" || (process.env.VERCEL_ENV === "preview" && !bypass)) {
+    return json(res, 503, { error: "نشانی یا دسترسی امن محیط آزمایشی تنظیم نشده است." });
   }
 
   const webhookUrl = new URL("/api/telegram/management-webhook", appUrl);
-  webhookUrl.searchParams.set("x-vercel-protection-bypass", bypass);
+  if (bypass) webhookUrl.searchParams.set("x-vercel-protection-bypass", bypass);
   try {
     await telegram(token, "setWebhook", {
       url: webhookUrl.toString(),
