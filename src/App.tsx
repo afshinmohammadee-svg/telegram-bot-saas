@@ -58,7 +58,7 @@ function jalaliToGregorian(input: string): string | null {
 const gregorianToJalali = (value?: string | null) => value ? new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'UTC'}).format(new Date(value)).replace(/\u200e/g,'') : ''
 const fullName = (item: { first_name?: string | null; last_name?: string | null; username?: string | null }) => [item.first_name, item.last_name].filter(Boolean).join(' ') || (item.username ? '@' + item.username : 'کاربر تلگرام')
 
-export default function App({ isSuperAdmin = false, onCreateUser, onUserCreated }: { isSuperAdmin?: boolean; onCreateUser?: () => void; onUserCreated?: () => void }) {
+export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdmin?: boolean; onCreateUser?: () => void }) {
   const [dark, setDark] = useState(true)
   const [active, setActive] = useState<Page>(isSuperAdmin ? 'مدیریت کاربران' : 'نمای کلی')
   const [mobileNav, setMobileNav] = useState(false)
@@ -154,6 +154,23 @@ export default function App({ isSuperAdmin = false, onCreateUser, onUserCreated 
       setError(cause instanceof Error ? cause.message : 'خطا در دریافت اطلاعات')
     }
   }, [active, refreshDashboard, isSuperAdmin])
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    const refreshUsers = async () => {
+      try {
+        const data = await api<{ users: AdminUser[] }>('/api/admin/users')
+        setAdminUsers(data.users)
+        setAdminExpiry(current => {
+          const next = { ...current }
+          for (const user of data.users) if (user.expires_at && !next[user.id]) next[user.id] = gregorianToJalali(user.expires_at)
+          return next
+        })
+      } catch (cause) { setError(cause instanceof Error ? cause.message : 'به‌روزرسانی فهرست کاربران ناموفق بود.') }
+    }
+    window.addEventListener('admin-users-refresh', refreshUsers)
+    return () => window.removeEventListener('admin-users-refresh', refreshUsers)
+  }, [isSuperAdmin])
 
   useEffect(() => {
     let alive = true
