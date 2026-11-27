@@ -182,8 +182,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         "SELECT display_name,username,status FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 30",
         [account.rows[0].id],
       );
-      const lines = result.rows.map((bot: {name:string;username:string|null;status:string}) =>
-        `• ${bot.name}${bot.username ? " (@" + bot.username + ")" : ""} — ${bot.status}`);
+      const lines = result.rows.map((bot: {display_name:string|null;username:string|null;status:string}) =>
+        `• ${bot.display_name || "ربات تلگرام"}${bot.username ? " (@" + bot.username + ")" : ""} — ${bot.status}`);
       await send(token, chatId, lines.length ? "🤖 ربات‌های متعلق به حساب تو:\n" + lines.join("\n") : "هنوز رباتی برای این حساب ثبت نشده است.", customerKeyboard);
     } else if (["⏸ توقف ربات", "▶️ فعال‌سازی ربات"].includes(command)) {
       const owned = await db.query("SELECT id,username,status FROM bots WHERE owner_id=$1 LIMIT 1", [account.rows[0].id]);
