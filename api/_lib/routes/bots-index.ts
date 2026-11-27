@@ -13,7 +13,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const user = await requireUser(req, res);
     if (!user) return;
     if (req.method === "POST" && req.query.resource === "webhook-reconnect") {
-      if (process.env.VERCEL_ENV !== "preview") return json(res, 403, { error: "ثبت دوباره وبهوک فقط از نسخه آزمایشی مجاز است." });
+      const railwayPreview = process.env.RAILWAY_ENVIRONMENT_NAME === "preview" || process.env.DEPLOY_ENV === "preview";
+      const isPreview = process.env.VERCEL_ENV === "preview" || railwayPreview;
+      if (!isPreview) return json(res, 403, { error: "ثبت دوباره وبهوک فقط از نسخه آزمایشی مجاز است." });
       const rawBotId = bodyOf(req).botId;
       const botId = typeof rawBotId === "string" ? rawBotId : "";
       if (!botId) return json(res, 400, { error: "شناسه ربات الزامی است." });
@@ -23,8 +25,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (process.env.ALLOW_PREVIEW_TELEGRAM_WEBHOOK !== "true") return json(res, 403, { error: "اتصال وبهوک در پیش‌نمایش فعال نشده است." });
       const appUrl = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/$/, "");
       if (!appUrl.startsWith("https://")) return json(res, 500, { error: "نشانی امن برنامه روی سرور تنظیم نشده است." });
-      const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-      if (!bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
+      const bypassSecret = process.env.VERCEL_ENV === "preview" ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() : undefined;
+      if (process.env.VERCEL_ENV === "preview" && !bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
       const token = decryptToken(bot.encrypted_token);
       const current = await telegram<{ url?: string }>(token, "getWebhookInfo");
       if (current.url) {
@@ -35,7 +37,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
       const webhookUrl = new URL(appUrl + "/api/telegram/webhook");
       webhookUrl.searchParams.set("botId", botId);
-      webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+      if (bypassSecret) webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
       const webhookSecret = randomBytes(32).toString("hex");
       const previousSecretHash = bot.webhook_secret_hash;
       await db.query("UPDATE bots SET webhook_secret_hash=$1 WHERE id=$2 AND owner_id=$3", [sha256(webhookSecret), botId, user.id]);
@@ -116,7 +118,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const me = await telegram<TelegramMe>(token, "getMe");
     const botId = crypto.randomUUID();
     const webhookSecret = randomBytes(32).toString("hex");
-    const isPreview = process.env.VERCEL_ENV === "preview";
+    const isPreview = process.env.VERCEL_ENV === "preview" || process.env.RAILWAY_ENVIRONMENT_NAME === "preview" || process.env.DEPLOY_ENV === "preview";
     if (isPreview && process.env.ALLOW_PREVIEW_TELEGRAM_WEBHOOK !== "true") {
       return json(res, 403, { error: "اتصال ربات در پیش‌نمایش هنوز فعال نشده است." });
     }
@@ -125,9 +127,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const webhookUrl = new URL(`${appUrl}/api/telegram/webhook`);
     webhookUrl.searchParams.set("botId", botId);
     if (isPreview) {
-      const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-      if (!bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
-      webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+      const bypassSecret = process.env.VERCEL_ENV === "preview" ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() : undefined;
+      if (process.env.VERCEL_ENV === "preview" && !bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
+      if (bypassSecret) webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
     }
     if (isPreview) {
       const configuredHost = new URL(appUrl).host;
