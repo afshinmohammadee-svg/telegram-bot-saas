@@ -13,14 +13,16 @@ type Message = { id: string; direction: string; sender_type: string; text_body: 
 type Visitor = { id: string; telegram_user_id: string; username: string | null; first_name: string | null; last_name: string | null; language_code: string | null; first_seen_at: string; last_seen_at: string; conversations: number }
 type Rule = { id: string; trigger_text: string; reply_text: string; match_type: string; is_enabled: boolean; created_at: string }
 type AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
-type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'اشتراک و اعتبار' | 'تنظیمات'
+type LicensePlan = { id: string; code: string; name: string; description: string | null; duration_days: number; max_bots: number; max_menus: number; max_visitors: number | null; features: Record<string, boolean>; is_active: boolean; issued_count: number }
+type LicenseItem = { id: string; user_id: string; plan_id: string; status: string; starts_at: string; expires_at: string; user_name: string | null; user_email: string | null; plan_name: string; plan_code: string }
+type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'مدیریت لایسنس' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
 const nav: NavItem[] = [
   { label: 'نمای کلی', icon: LayoutDashboard }, { label: 'گفتگوها', icon: MessageCircle },
   { label: 'بازدیدکنندگان', icon: Users }, { label: 'پاسخ‌های خودکار', icon: Zap },
 ]
 const tools: NavItem[] = [
-  { label: 'مدیریت ربات', icon: Bot }, { label: 'مدیریت کاربران', icon: UserCog }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
+  { label: 'مدیریت ربات', icon: Bot }, { label: 'مدیریت کاربران', icon: UserCog }, { label: 'مدیریت لایسنس', icon: ShieldCheck }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
   { label: 'تنظیمات', icon: Settings },
 ]
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -161,7 +163,44 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     finally { setBusy(false) }
   }
 
-  async function toggleRule(rule: Rule) {
+
+  async function createLicensePlan(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('')
+    try {
+      await api('/api/admin/license-plans', { method: 'POST', body: JSON.stringify({
+        code: planDraft.code, name: planDraft.name, description: planDraft.description,
+        durationDays: Number(planDraft.durationDays), maxBots: Number(planDraft.maxBots),
+        maxMenus: Number(planDraft.maxMenus), maxVisitors: planDraft.maxVisitors || null,
+      }) })
+      setPlanDraft({ code:'', name:'', description:'', durationDays:'30', maxBots:'1', maxMenus:'20', maxVisitors:'' })
+      const data = await api<{ plans: LicensePlan[] }>('/api/admin/license-plans'); setLicensePlans(data.plans)
+      setNotice('پلن لایسنس ایجاد شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ساخت پلن ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function issueLicense(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('')
+    try {
+      await api('/api/admin/licenses', { method:'POST', body:JSON.stringify(licenseDraft) })
+      const data = await api<{ licenses: LicenseItem[] }>('/api/admin/licenses'); setLicenseItems(data.licenses)
+      setNotice('لایسنس با موفقیت به مشتری تخصیص یافت.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'صدور لایسنس ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function setLicenseStatus(item: LicenseItem, status: 'active' | 'suspended' | 'revoked') {
+    const label = status === 'active' ? 'فعال' : status === 'suspended' ? 'تعلیق' : 'لغو'
+    if (!window.confirm('وضعیت این لایسنس ' + label + ' شود؟')) return
+    setBusy(true); setError('')
+    try {
+      await api('/api/admin/licenses?id=' + encodeURIComponent(item.id), { method:'PATCH', body:JSON.stringify({ status }) })
+      const data = await api<{ licenses: LicenseItem[] }>('/api/admin/licenses'); setLicenseItems(data.licenses)
+      setNotice('وضعیت لایسنس تغییر کرد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'تغییر وضعیت ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+\n  async function toggleRule(rule: Rule) {
     try {
       await api(`/api/auto-replies?id=${rule.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: !rule.is_enabled }) })
       setRules(current => current.map(item => item.id === rule.id ? { ...item, is_enabled: !item.is_enabled } : item))
@@ -181,7 +220,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     'بازدیدکنندگان': 'افرادی که به رباتت پیام داده‌اند و /start زده‌اند.',
     'پاسخ‌های خودکار': 'برای پیام‌های ورودی، پاسخ خودکار تعریف کن.',
     'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',
-    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
+    'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',\n    'مدیریت لایسنس': 'تعریف پلن‌ها، تخصیص لایسنس و کنترل اعتبار مشتریان.',
     'اشتراک و اعتبار': 'وضعیت اشتراک و زمان اعتبار حساب.',
     'تنظیمات': 'تنظیمات پایه پنل و حساب کاربری.',
   }
@@ -202,7 +241,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
         <header className="topbar"><div className="top-left"><button className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)}><Command size={19}/></button><div className="breadcrumb">فضای کاری <span>/</span> <b>{active}</b></div></div><div className="top-actions"><div className="searchbox"><Search size={16}/><input placeholder="جستجو..." /></div><button className="icon-btn theme-btn" aria-label="تغییر پوسته" onClick={() => setDark(!dark)}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button><button className="icon-btn" aria-label="بارگذاری مجدد" onClick={() => { setLoading(true); refreshPage().finally(() => setLoading(false)) }}><RefreshCw size={16}/></button><div className="top-avatar">A</div></div></header>
 
         <div className="content">
-          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && active !== 'مدیریت کاربران' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
+          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && active !== 'مدیریت کاربران' && active !== 'مدیریت لایسنس' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
           {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}><X size={15}/></button></div>}
           {error && <div className="notice error-notice" role="alert">{error}<button onClick={() => setError('')}><X size={15}/></button></div>}
           {loading ? <div className="loading-state"><LoaderCircle className="spin" size={25}/> در حال دریافت اطلاعات...</div> : null}
@@ -232,7 +271,44 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
 
           {!loading && active === 'مدیریت کاربران' && isSuperAdmin && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اشتراک کاربران</h2><p>برای هر حساب کاربری تاریخ پایان اشتراک را تعیین کن.</p></div><UserCog className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت اشتراک</th><th>تاریخ انقضا</th><th>عملیات</th></tr></thead><tbody>{adminUsers.map(user => <tr key={user.id}><td>{user.name}</td><td dir="ltr">{user.email}</td><td>{user.role === 'super_admin' ? 'مدیر کل' : 'کاربر'}</td><td><span className={user.subscription_active ? 'status-pill good' : 'status-pill'}>{user.subscription_active ? 'فعال' : 'غیرفعال'}</span></td><td>{user.role === 'super_admin' ? '—' : <input aria-label={'تاریخ انقضای ' + user.name} type="date" value={adminExpiry[user.id] || ''} onChange={e => setAdminExpiry(current => ({ ...current, [user.id]: e.target.value }))}/>}</td><td>{user.role !== 'super_admin' && <button className="outline-btn" disabled={busy || !adminExpiry[user.id]} onClick={() => saveExpiry(user.id)}>ذخیره</button>}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="empty-inline">کاربری برای نمایش وجود ندارد.</div>}</div></section>}
 
-          {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
+
+          {!loading && active === 'مدیریت لایسنس' && isSuperAdmin && <section className="page-panel">
+            <div className="panel rule-form-panel">
+              <div className="panel-heading"><div><h2>تعریف پلن جدید</h2><p>مدت اعتبار و سقف امکانات هر پلن را تعیین کن.</p></div><ShieldCheck className="muted-icon"/></div>
+              <form className="rule-form" onSubmit={createLicensePlan}>
+                <label>شناسه پلن انگلیسی<input value={planDraft.code} onChange={e=>setPlanDraft(v=>({...v,code:e.target.value}))} placeholder="starter-1m" pattern="[A-Za-z0-9_-]+" required/></label>
+                <label>نام پلن<input value={planDraft.name} onChange={e=>setPlanDraft(v=>({...v,name:e.target.value}))} placeholder="پلن یک‌ماهه" required/></label>
+                <label>مدت اعتبار (روز)<input type="number" min="1" max="3650" value={planDraft.durationDays} onChange={e=>setPlanDraft(v=>({...v,durationDays:e.target.value}))} required/></label>
+                <label>حداکثر ربات<input type="number" min="1" max="100" value={planDraft.maxBots} onChange={e=>setPlanDraft(v=>({...v,maxBots:e.target.value}))} required/></label>
+                <label>حداکثر منو<input type="number" min="0" max="10000" value={planDraft.maxMenus} onChange={e=>setPlanDraft(v=>({...v,maxMenus:e.target.value}))} required/></label>
+                <label>سقف بازدیدکننده (خالی = نامحدود)<input type="number" min="0" value={planDraft.maxVisitors} onChange={e=>setPlanDraft(v=>({...v,maxVisitors:e.target.value}))}/></label>
+                <label className="wide-field">توضیحات<input value={planDraft.description} onChange={e=>setPlanDraft(v=>({...v,description:e.target.value}))} placeholder="توضیح کوتاه پلن"/></label>
+                <button className="primary-btn" disabled={busy}><Plus size={16}/> ایجاد پلن</button>
+              </form>
+            </div>
+            <div className="panel rule-form-panel">
+              <div className="panel-heading"><div><h2>تخصیص لایسنس به مشتری</h2><p>با صدور لایسنس جدید، لایسنس فعال قبلی مشتری خاتمه می‌یابد.</p></div><UserCog className="muted-icon"/></div>
+              <form className="rule-form" onSubmit={issueLicense}>
+                <label>مشتری<select value={licenseDraft.userId} onChange={e=>setLicenseDraft(v=>({...v,userId:e.target.value}))} required><option value="">انتخاب مشتری</option>{adminUsers.map(user=><option key={user.id} value={user.id}>{user.name} — {user.email}</option>)}</select></label>
+                <label>پلن فعال<select value={licenseDraft.planId} onChange={e=>setLicenseDraft(v=>({...v,planId:e.target.value}))} required><option value="">انتخاب پلن</option>{licensePlans.filter(plan=>plan.is_active).map(plan=><option key={plan.id} value={plan.id}>{plan.name} — {plan.duration_days} روز</option>)}</select></label>
+                <label className="wide-field">یادداشت (اختیاری)<input value={licenseDraft.notes} onChange={e=>setLicenseDraft(v=>({...v,notes:e.target.value}))} maxLength={1000}/></label>
+                <button className="primary-btn" disabled={busy || !licenseDraft.userId || !licenseDraft.planId}><ShieldCheck size={16}/> صدور و تخصیص لایسنس</button>
+              </form>
+            </div>
+            <div className="panel page-panel">
+              <div className="panel-heading"><div><h2>پلن‌های تعریف‌شده</h2><p>{licensePlans.length.toLocaleString('fa-IR')} پلن</p></div></div>
+              <div className="table-wrap"><table className="data-table"><thead><tr><th>نام پلن</th><th>شناسه</th><th>مدت</th><th>ربات</th><th>منو</th><th>بازدیدکننده</th><th>لایسنس صادرشده</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
+                {licensePlans.map(plan=><tr key={plan.id}><td>{plan.name}</td><td dir="ltr">{plan.code}</td><td>{plan.duration_days} روز</td><td>{plan.max_bots}</td><td>{plan.max_menus}</td><td>{plan.max_visitors ?? 'نامحدود'}</td><td>{plan.issued_count}</td><td><span className={plan.is_active?'status-pill good':'status-pill'}>{plan.is_active?'فعال':'غیرفعال'}</span></td><td><button className="outline-btn" disabled={busy} onClick={async()=>{try{await api('/api/admin/license-plans?id='+plan.id,{method:'PATCH',body:JSON.stringify({isActive:!plan.is_active})});const d=await api<{plans:LicensePlan[]}>('/api/admin/license-plans');setLicensePlans(d.plans)}catch(e){setError(e instanceof Error?e.message:'تغییر وضعیت پلن ناموفق بود.')}}}>{plan.is_active?'غیرفعال‌سازی':'فعال‌سازی'}</button></td></tr>)}
+              </tbody></table>{!licensePlans.length && <div className="empty-inline">هنوز پلنی ساخته نشده است.</div>}</div>
+            </div>
+            <div className="panel page-panel">
+              <div className="panel-heading"><div><h2>لایسنس‌های مشتریان</h2><p>{licenseItems.length.toLocaleString('fa-IR')} لایسنس ثبت‌شده</p></div></div>
+              <div className="table-wrap"><table className="data-table"><thead><tr><th>مشتری</th><th>پلن</th><th>وضعیت</th><th>شروع</th><th>انقضا</th><th>عملیات</th></tr></thead><tbody>
+                {licenseItems.map(item=><tr key={item.id}><td>{item.user_name || item.user_email || 'مشتری حذف‌شده'}</td><td>{item.plan_name}</td><td><span className={item.status==='active'?'status-pill good':'status-pill'}>{item.status==='active'?'فعال':item.status==='suspended'?'معلق':item.status==='revoked'?'لغوشده':item.status}</span></td><td>{date(item.starts_at)}</td><td>{date(item.expires_at)}</td><td>{item.status==='active'?<><button className="outline-btn" disabled={busy} onClick={()=>setLicenseStatus(item,'suspended')}>تعلیق</button> <button className="danger-btn" disabled={busy} onClick={()=>setLicenseStatus(item,'revoked')}>لغو</button></>:item.status==='suspended'?<button className="outline-btn" disabled={busy} onClick={()=>setLicenseStatus(item,'active')}>فعال‌سازی</button>:null}</td></tr>)}
+              </tbody></table>{!licenseItems.length && <div className="empty-inline">هنوز لایسنسی صادر نشده است.</div>}</div>
+            </div>
+          </section>}
+\n          {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
 
           {!loading && active === 'تنظیمات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>تنظیمات پنل</h2><p>ترجیحات نمایشی این مرورگر</p></div><Settings className="muted-icon"/></div><div className="settings-row"><div><b>پوسته پنل</b><p>حالت روشن یا تاریک رابط کاربری</p></div><button className="outline-btn" onClick={() => setDark(!dark)}>{dark ? <Sun size={16}/> : <Moon size={16}/>} تغییر به حالت {dark ? 'روشن' : 'تاریک'}</button></div><div className="settings-row"><div><b>امنیت توکن</b><p>توکن ربات در سمت سرور با AES-256-GCM رمزنگاری می‌شود.</p></div><ShieldCheck color="#43c99a"/></div></section>}
 
