@@ -15,7 +15,10 @@ const pool = new Pool({
   ssl: databaseUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 
-const origins = new Set<string>(["http://localhost:5173"]);
+const origins = new Set<string>([
+  "http://localhost:5173",
+  "https://telegram-bot-saas-git-fix-auth-nested-routes-afshin7.vercel.app",
+]);
 for (const value of [process.env.APP_URL, process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]) {
   if (!value) continue;
   origins.add(value.startsWith("http") ? value : `https://${value}`);
