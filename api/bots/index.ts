@@ -1,5 +1,4 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { json } from "../_lib/server.js";
 import botListHandler from "../_lib/routes/bots-index.js";
 import botDetailHandler from "../_lib/routes/bots-detail.js";
 import botStartLinkHandler from "../_lib/routes/bots-start-link.js";
