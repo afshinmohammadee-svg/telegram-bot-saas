@@ -15,28 +15,75 @@ const pool = new Pool({
   ssl: databaseUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 
-const appOrigin = process.env.APP_URL
-  ? [process.env.APP_URL]
-  : process.env.VERCEL_URL
-    ? [`https://${process.env.VERCEL_URL}`]
-    : ["http://localhost:5173"];
+const origins = new Set<string>(["http://localhost:5173"]);
+for (const value of [process.env.APP_URL, process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]) {
+  if (!value) continue;
+  origins.add(value.startsWith("http") ? value : `https://${value}`);
+}
+
+const baseURL =
+  process.env.BETTER_AUTH_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:5173");
 
 export const auth = betterAuth({
   appName: "تلگرام‌یار",
   database: pool,
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL || undefined,
-  trustedOrigins: appOrigin,
+  baseURL,
+  trustedOrigins: [...origins],
+  user: {
+    fields: {
+      emailVerified: "email_verified",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+      banReason: "ban_reason",
+      banExpires: "ban_expires",
+    },
+  },
+  session: {
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+      ipAddress: "ip_address",
+      userAgent: "user_agent",
+      userId: "user_id",
+      impersonatedBy: "impersonated_by",
+    },
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+    cookieCache: { enabled: false },
+  },
+  account: {
+    fields: {
+      accountId: "account_id",
+      providerId: "provider_id",
+      userId: "user_id",
+      accessToken: "access_token",
+      refreshToken: "refresh_token",
+      idToken: "id_token",
+      accessTokenExpiresAt: "access_token_expires_at",
+      refreshTokenExpiresAt: "refresh_token_expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
+  verification: {
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
     minPasswordLength: 12,
     maxPasswordLength: 128,
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    updateAge: 60 * 60 * 24,
-    cookieCache: { enabled: false },
   },
   advanced: {
     useSecureCookies: process.env.NODE_ENV === "production",
