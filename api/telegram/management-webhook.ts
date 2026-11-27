@@ -2,7 +2,7 @@ import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
-type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string; contact?: { phone_number: string; user_id?: number } };
+type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
 type TgUpdate = { update_id: number; message?: TgMessage };
 
 const adminKeyboard = {
@@ -183,6 +183,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const rawInput = (message.text ?? "").trim();
+    const photoFileId = message.photo?.[message.photo.length - 1]?.file_id ?? null;
+    const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
     const menuLicense = await db.query(
       `SELECT features_snapshot FROM licenses WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now() ORDER BY expires_at DESC LIMIT 1`,
@@ -200,7 +202,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         await send(token,chatId,"هنوز رباتی به حساب شما متصل نشده است. ابتدا ربات خود را از پنل کاربری متصل کنید.",customerKeyboard);
       } else if (owned.rowCount === 1) {
         await db.query(`INSERT INTO management_menu_sessions(telegram_user_id,user_id,bot_id,step,draft,updated_at) VALUES($1,$2,$3,'home','{}'::jsonb,now()) ON CONFLICT(telegram_user_id) DO UPDATE SET user_id=EXCLUDED.user_id,bot_id=EXCLUDED.bot_id,step='home',draft='{}'::jsonb,updated_at=now()`,[telegramId,account.rows[0].id,owned.rows[0].id]);
-        await send(token,chatId,"🧩 مدیریت منوی ربات شما\nاز گزینه‌های زیر برای ثبت یا ویرایش منو استفاده کنید.",{keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true});
+        await send(token,chatId,"🧩 مدیریت منوی ربات شما\nاز گزینه‌های زیر برای ثبت یا ویرایش منو و بنر استفاده کنید.",{keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"🖼 تنظیم بنر"},{text:"🗑 حذف بنر"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true});
       } else {
         await db.query(`INSERT INTO management_menu_sessions(telegram_user_id,user_id,bot_id,step,draft,updated_at) VALUES($1,$2,NULL,'choose_bot','{}'::jsonb,now()) ON CONFLICT(telegram_user_id) DO UPDATE SET user_id=EXCLUDED.user_id,bot_id=NULL,step='choose_bot',draft='{}'::jsonb,updated_at=now()`,[telegramId,account.rows[0].id]);
         const buttons = owned.rows.map((b:{display_name:string|null;username:string|null})=>[{text:"🤖 "+(b.username?"@"+b.username:b.display_name||"ربات تلگرام")}]);
@@ -225,7 +227,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const saveSession = async (step:string,nextDraft:Record<string,any>,nextBotId=botId) => {
         await db.query("UPDATE management_menu_sessions SET bot_id=$3,step=$4,draft=$5::jsonb,updated_at=now() WHERE telegram_user_id=$1 AND user_id=$2",[telegramId,account.rows[0].id,nextBotId,step,JSON.stringify(nextDraft)]);
       };
-      const homeKeyboard = {keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true};
+      const homeKeyboard = {keyboard:[[{text:"➕ گزینه اصلی جدید"},{text:"➕ زیرمنوی جدید"}],[{text:"✏️ ویرایش منو"},{text:"📋 فهرست منوها"}],[{text:"🖼 تنظیم بنر"},{text:"🗑 حذف بنر"}],[{text:"⬅️ بازگشت به پنل"}]],resize_keyboard:true,is_persistent:true};
       if (menuSession.step === "choose_bot") {
         const owned = await db.query("SELECT id,display_name,username FROM bots WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20",[account.rows[0].id]);
         const selected = owned.rows.find((b:{display_name:string|null;username:string|null})=>"🤖 "+(b.username?"@"+b.username:b.display_name||"ربات تلگرام")===rawInput);
@@ -251,6 +253,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         await send(token,chatId,lines.length?"📋 منوهای ثبت‌شده:\n"+lines.join("\n"):"هنوز منویی ثبت نشده است.",homeKeyboard);
         return json(res,200,{ok:true});
       }
+      if (rawInput === "🖼 تنظیم بنر") { await saveSession("banner_wait",{}); await send(token,chatId,"عکس بنر صفحه اصلی را همین‌جا ارسال کن. می‌توانی کپشن هم برای آن بنویسی؛ برای لغو /cancel را بفرست."); return json(res,200,{ok:true}); }
+      if (rawInput === "🗑 حذف بنر") { await db.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1",[botId]); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
       if (rawInput === "➕ گزینه اصلی جدید") {
         await saveSession("add_title",{parentId:null});
         await send(token,chatId,"عنوان گزینه اصلی را ارسال کنید (حداکثر ۱۲۰ نویسه). برای لغو /cancel را بفرستید.");
@@ -295,14 +299,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           await send(token,chatId,"✅ زیرمنو ثبت شد.",homeKeyboard);
         } else {
           await saveSession("add_content",{...draft,responseType});
-          await send(token,chatId,responseType==="url"?"لینک کامل با https:// را ارسال کنید.":responseType==="photo"?"شناسه فایل عکس تلگرام (file_id) را ارسال کنید.":responseType==="document"?"شناسه فایل سند تلگرام (file_id) را ارسال کنید.":"متن پاسخ این گزینه را ارسال کنید.");
+          await send(token,chatId,responseType==="url"?"لینک کامل با https:// را ارسال کنید.":responseType==="photo"?"خودِ عکس را ارسال کن؛ در صورت نیاز توضیح را در کپشن عکس بنویس.":responseType==="document"?"شناسه فایل سند تلگرام (file_id) را ارسال کنید.":"متن پاسخ این گزینه را ارسال کنید.");
         }
         return json(res,200,{ok:true});
       }
+      if (menuSession.step === "banner_wait") {
+        if (!photoFileId) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
+        await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoFileId]);
+        await saveSession("home",{},botId); await send(token,chatId,"✅ بنر صفحه اصلی ذخیره شد.",homeKeyboard); return json(res,200,{ok:true});
+      }
       if (menuSession.step === "add_content") {
-        const value=rawInput.trim().slice(0,4000);
+        if (menuSession.draft?.responseType === "photo" && !photoFileId) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+        const value=(menuSession.draft?.responseType === "photo" ? photoFileId : rawInput).trim().slice(0,4000);
         if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
-        await db.query("INSERT INTO bot_menus(bot_id,title,payload,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,true)",[botId,draft.title,value,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
+        await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
         await saveSession("home",{},botId);
         await send(token,chatId,"✅ گزینه منو با موفقیت ثبت شد.",homeKeyboard);
         return json(res,200,{ok:true});
@@ -328,9 +338,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (menuSession.step === "edit_content") {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
-        const value=rawInput.trim().slice(0,4000);
+        if (type === "photo" && !photoFileId) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+        const value=(type === "photo" ? photoFileId : rawInput).trim().slice(0,4000);
         if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
-        await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value]);
+        await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,description=CASE WHEN $3='photo' THEN $5 ELSE description END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value,mediaCaption||null]);
         await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
       }
       await send(token,chatId,"از گزینه‌های مدیریت منو استفاده کنید.",homeKeyboard);
