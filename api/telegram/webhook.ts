@@ -24,6 +24,7 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
     const parent = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId,botId]);
     keyboard.push([{ text: "⬅️ بازگشت", callback_data: "back:" + (parent.rows[0]?.parent_id ?? "root") }]);
   }
+  keyboard.push([{ text: "🏠 منوی اصلی", callback_data: "main:root" }]);
   if (!keyboard.length) {
     await telegram(token,"sendMessage",{chat_id:chatId,text:"هنوز منویی برای نمایش تعریف نشده است."});
     return;
@@ -86,11 +87,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 text:entry.title.slice(0,64),
                 ...(entry.response_type==="url" && entry.target_url ? {url:entry.target_url}:{callback_data:"menu:"+entry.id}),
               }]);
-              if (item.parent_id) {
-                const parentInfo = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [item.parent_id,bot.id]);
-                keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+(parentInfo.rows[0]?.parent_id ?? "root")}]);
-              }
-              const replyMarkup = keyboard.length ? {reply_markup:{inline_keyboard:keyboard}} : {};
+              const backTarget = item.parent_id
+                ? (await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [item.parent_id,bot.id])).rows[0]?.parent_id ?? "root"
+                : "root";
+              keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+backTarget}]);
+              keyboard.push([{text:"🏠 منوی اصلی",callback_data:"main:root"}]);
+              const replyMarkup = {reply_markup:{inline_keyboard:keyboard}};
               if (item.response_type === "photo") {
                 await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
               } else if (item.response_type === "document") {
@@ -103,6 +105,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         } else if (callbackData.startsWith("back:")) {
           const parent = callbackData.slice(5);
           await showMenu(token,bot.id,callbackChatId,parent==="root"?null:parent);
+        } else if (callbackData === "main:root") {
+          await showMenu(token,bot.id,callbackChatId,null);
         }
       }
       await telegram(decryptToken(bot.encrypted_token),"answerCallbackQuery",{callback_query_id:callback.id});
