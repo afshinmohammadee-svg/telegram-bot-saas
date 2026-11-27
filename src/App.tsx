@@ -15,14 +15,15 @@ type Rule = { id: string; trigger_text: string; reply_text: string; match_type: 
 type AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
 type LicensePlan = { id: string; code: string; name: string; description: string | null; duration_days: number; max_bots: number; max_menus: number; max_visitors: number | null; features: Record<string, boolean>; is_active: boolean; issued_count: number }
 type LicenseItem = { id: string; user_id: string; plan_id: string; status: string; starts_at: string; expires_at: string; user_name: string | null; user_email: string | null; plan_name: string; plan_code: string }
-type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'مدیریت لایسنس' | 'اشتراک و اعتبار' | 'تنظیمات'
+type BotMenu = { id: string; title: string; description: string | null; parent_id: string | null; response_type: 'text' | 'photo' | 'document' | 'url' | 'submenu'; response_content: string | null; target_url: string | null; sort_order: number; is_active: boolean }
+type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'مدیریت لایسنس' | 'منوساز' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
 const nav: NavItem[] = [
   { label: 'نمای کلی', icon: LayoutDashboard }, { label: 'گفتگوها', icon: MessageCircle },
   { label: 'بازدیدکنندگان', icon: Users }, { label: 'پاسخ‌های خودکار', icon: Zap },
 ]
 const tools: NavItem[] = [
-  { label: 'مدیریت ربات', icon: Bot }, { label: 'مدیریت کاربران', icon: UserCog }, { label: 'مدیریت لایسنس', icon: ShieldCheck }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
+  { label: 'مدیریت ربات', icon: Bot }, { label: 'منوساز', icon: Bot }, { label: 'مدیریت کاربران', icon: UserCog }, { label: 'مدیریت لایسنس', icon: ShieldCheck }, { label: 'اشتراک و اعتبار', icon: CalendarClock },
   { label: 'تنظیمات', icon: Settings },
 ]
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -61,6 +62,8 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
   const [licenseItems, setLicenseItems] = useState<LicenseItem[]>([])
   const [planDraft, setPlanDraft] = useState({ code: '', name: '', description: '', durationDays: '30', maxBots: '1', maxMenus: '20', maxVisitors: '', features: { conversations: true, autoReplies: true, menuBuilder: true } })
   const [licenseDraft, setLicenseDraft] = useState({ userId: '', planId: '', notes: '' })
+  const [menus, setMenus] = useState<BotMenu[]>([])
+  const [menuDraft, setMenuDraft] = useState({ id: '', title: '', description: '', parentId: '', responseType: 'text' as BotMenu['response_type'], responseContent: '', targetUrl: '' })
 
   const refreshDashboard = useCallback(async () => {
     const [dash, botData] = await Promise.all([api<Dashboard>('/api/dashboard'), api<{ bots: BotInfo[] }>('/api/bots')])
@@ -83,6 +86,10 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
       if (active === 'پاسخ‌های خودکار') {
         const data = await api<{ rules: Rule[] }>('/api/auto-replies')
         setRules(data.rules)
+      }
+      if (active === 'منوساز') {
+        const data = await api<{ menus: BotMenu[] }>('/api/bot-menus')
+        setMenus(data.menus)
       }
       if (active === 'مدیریت کاربران' && isSuperAdmin) {
         const data = await api<{ users: AdminUser[] }>('/api/admin/users')
@@ -188,6 +195,34 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
   }
 
 
+  async function saveMenu(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('')
+    try {
+      const { id, ...draft } = menuDraft
+      await api('/api/bot-menus' + (id ? '?id=' + encodeURIComponent(id) : ''), {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(draft),
+      })
+      const data = await api<{ menus: BotMenu[] }>('/api/bot-menus')
+      setMenus(data.menus)
+      setMenuDraft({ id:'', title:'', description:'', parentId:'', responseType:'text', responseContent:'', targetUrl:'' })
+      setNotice(id ? 'منو ویرایش شد.' : 'منو ایجاد شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره منو ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function removeMenu(menu: BotMenu) {
+    if (!window.confirm('منو و تمام زیرمنوهای آن حذف شوند؟')) return
+    setBusy(true); setError('')
+    try {
+      await api('/api/bot-menus?id=' + encodeURIComponent(menu.id), { method:'DELETE' })
+      setMenus(current => current.filter(item => item.id !== menu.id && item.parent_id !== menu.id))
+      if (menuDraft.id === menu.id) setMenuDraft({ id:'', title:'', description:'', parentId:'', responseType:'text', responseContent:'', targetUrl:'' })
+      setNotice('منو حذف شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'حذف منو ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
   async function createLicensePlan(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
     try {
@@ -247,6 +282,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     'مدیریت ربات': 'وضعیت اتصال و تنظیمات ربات تلگرام.',
     'مدیریت کاربران': 'ساخت و مدیریت اشتراک کاربران سامانه.',
     'مدیریت لایسنس': 'تعریف پلن‌ها، تخصیص لایسنس و کنترل اعتبار مشتریان.',
+    'منوساز': 'ساخت منو و زیرمنو و تعیین پاسخ هر دکمه برای ربات تلگرام.',
     'اشتراک و اعتبار': 'وضعیت اشتراک و زمان اعتبار حساب.',
     'تنظیمات': 'تنظیمات پایه پنل و حساب کاربری.',
   }
@@ -267,7 +303,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
         <header className="topbar"><div className="top-left"><button className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)}><Command size={19}/></button><div className="breadcrumb">فضای کاری <span>/</span> <b>{active}</b></div></div><div className="top-actions"><div className="searchbox"><Search size={16}/><input placeholder="جستجو..." /></div><button className="icon-btn theme-btn" aria-label="تغییر پوسته" onClick={() => setDark(!dark)}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button><button className="icon-btn" aria-label="بارگذاری مجدد" onClick={() => { setLoading(true); refreshPage().finally(() => setLoading(false)) }}><RefreshCw size={16}/></button><div className="top-avatar">A</div></div></header>
 
         <div className="content">
-          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && active !== 'مدیریت کاربران' && active !== 'مدیریت لایسنس' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
+          <div className="page-heading"><div><div className="eyebrow"><span className="pulse"/> پنل مدیریت</div><h1>{title}</h1><p>{pageDescription[active]}</p></div>{active !== 'اشتراک و اعتبار' && active !== 'تنظیمات' && active !== 'مدیریت کاربران' && active !== 'مدیریت لایسنس' && active !== 'منوساز' && <button className="primary-btn" onClick={() => active === 'پاسخ‌های خودکار' ? document.getElementById('new-rule-trigger')?.focus() : setShowConnect(true)}><Plus size={18}/>{active === 'پاسخ‌های خودکار' ? 'افزودن پاسخ' : 'اتصال ربات جدید'}</button>}</div>
           {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}><X size={15}/></button></div>}
           {error && <div className="notice error-notice" role="alert">{error}<button onClick={() => setError('')}><X size={15}/></button></div>}
           {loading ? <div className="loading-state"><LoaderCircle className="spin" size={25}/> در حال دریافت اطلاعات...</div> : null}
@@ -294,6 +330,27 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
           {!loading && active === 'بازدیدکنندگان' && <section className="panel page-panel"><div className="panel-heading"><div><h2>بازدیدکنندگان</h2><p>{visitors.length.toLocaleString('fa-IR')} نفر اخیر</p></div><Users className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>کاربر</th><th>شناسه تلگرام</th><th>زبان</th><th>گفتگوها</th><th>آخرین بازدید</th></tr></thead><tbody>{visitors.map(v => <tr key={v.id}><td>{fullName(v)}</td><td dir="ltr">{v.telegram_user_id}</td><td>{v.language_code || '—'}</td><td>{v.conversations.toLocaleString('fa-IR')}</td><td>{date(v.last_seen_at)}</td></tr>)}</tbody></table>{!visitors.length && <div className="empty-inline">هنوز بازدیدکننده‌ای ثبت نشده است. با ارسال /start به ربات، کاربران اینجا نمایش داده می‌شوند.</div>}</div></section>}
 
           {!loading && active === 'پاسخ‌های خودکار' && <section className="page-panel"><div className="panel rule-form-panel"><div className="panel-heading"><div><h2>افزودن پاسخ خودکار</h2><p>با تطبیق متن پیام کاربر، پاسخ تعیین‌شده ارسال می‌شود.</p></div><Zap className="muted-icon"/></div><form className="rule-form" onSubmit={addRule}><label>عبارت محرک<input id="new-rule-trigger" value={trigger} onChange={e => setTrigger(e.target.value)} placeholder="مثلاً قیمت" maxLength={200} required/></label><label>نوع تطبیق<select value={matchType} onChange={e => setMatchType(e.target.value)}><option value="contains">شامل عبارت باشد</option><option value="exact">دقیقاً برابر باشد</option><option value="starts_with">با عبارت شروع شود</option></select></label><label className="wide-field">متن پاسخ<textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="متن پاسخی که ربات ارسال می‌کند..." maxLength={4000} rows={3} required/></label><button className="primary-btn" disabled={busy || !trigger.trim() || !replyText.trim()}><Plus size={16}/> ثبت پاسخ</button></form></div><div className="panel rules-list"><div className="panel-heading"><div><h2>قوانین ثبت‌شده</h2><p>{rules.length.toLocaleString('fa-IR')} پاسخ خودکار</p></div></div>{rules.length ? rules.map(rule => <div className="rule-row" key={rule.id}><div className="rule-copy"><b>{rule.trigger_text}</b><p>{rule.reply_text}</p><small>{rule.match_type === 'exact' ? 'تطبیق دقیق' : rule.match_type === 'starts_with' ? 'شروع با عبارت' : 'شامل عبارت'}</small></div><label className="switch-label"><input type="checkbox" checked={rule.is_enabled} onChange={() => toggleRule(rule)}/><span>{rule.is_enabled ? 'فعال' : 'غیرفعال'}</span></label><button className="icon-btn delete-btn" aria-label="حذف قانون" onClick={() => deleteRule(rule.id)}><Trash2 size={16}/></button></div>) : <div className="empty-inline">هنوز پاسخی تعریف نشده است.</div>}</div></section>}
+
+          {!loading && active === 'منوساز' && <section className="page-panel">
+            <div className="panel rule-form-panel">
+              <div className="panel-heading"><div><h2>{menuDraft.id ? 'ویرایش منو' : 'ساخت منو یا زیرمنو'}</h2><p>برای هر دکمه عنوان و نوع محتوای پاسخ را مشخص کن.</p></div><Bot className="muted-icon"/></div>
+              <form className="rule-form" onSubmit={saveMenu}>
+                <label>عنوان دکمه<input value={menuDraft.title} onChange={e=>setMenuDraft(v=>({...v,title:e.target.value}))} maxLength={120} required placeholder="مثلاً خدمات ما"/></label>
+                <label>منوی والد<select value={menuDraft.parentId} onChange={e=>setMenuDraft(v=>({...v,parentId:e.target.value}))}><option value="">منوی اصلی (بدون والد)</option>{menus.filter(m=>m.id!==menuDraft.id).map(m=><option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
+                <label>نوع عملکرد دکمه<select value={menuDraft.responseType} onChange={e=>setMenuDraft(v=>({...v,responseType:e.target.value as BotMenu['response_type']}))}><option value="text">ارسال متن</option><option value="photo">ارسال عکس (با آدرس فایل تلگرام)</option><option value="document">ارسال فایل (با آدرس فایل تلگرام)</option><option value="url">بازکردن لینک</option><option value="submenu">نمایش زیرمنو</option></select></label>
+                {menuDraft.responseType==='url' ? <label>آدرس لینک امن<input type="url" value={menuDraft.targetUrl} onChange={e=>setMenuDraft(v=>({...v,targetUrl:e.target.value}))} placeholder="https://example.com" required/></label> : null}
+                {menuDraft.responseType!=='submenu' && menuDraft.responseType!=='url' ? <label className="wide-field">{menuDraft.responseType==='text'?'متن پاسخ':menuDraft.responseType==='photo'?'آدرس file_id یا URL عکس':'آدرس file_id یا URL فایل'}<textarea rows={3} maxLength={4000} value={menuDraft.responseContent} onChange={e=>setMenuDraft(v=>({...v,responseContent:e.target.value}))} required placeholder="محتوای ارسالی به کاربر تلگرام"/></label> : null}
+                <label className="wide-field">توضیحات اختیاری<input value={menuDraft.description} onChange={e=>setMenuDraft(v=>({...v,description:e.target.value}))} maxLength={1000} placeholder="توضیح برای مدیریت داخلی"/></label>
+                <div className="wide-field" style={{display:'flex',gap:10,flexWrap:'wrap'}}><button className="primary-btn" disabled={busy}>{menuDraft.id?'ذخیره تغییرات':'ایجاد منو'}</button>{menuDraft.id?<button type="button" className="outline-btn" onClick={()=>setMenuDraft({id:'',title:'',description:'',parentId:'',responseType:'text',responseContent:'',targetUrl:''})}>انصراف از ویرایش</button>:null}</div>
+              </form>
+            </div>
+            <div className="panel page-panel">
+              <div className="panel-heading"><div><h2>منوهای ساخته‌شده</h2><p>{menus.length.toLocaleString('fa-IR')} منو و زیرمنو</p></div></div>
+              <div className="table-wrap"><table className="data-table"><thead><tr><th>عنوان</th><th>والد</th><th>عملکرد</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
+                {menus.map(m=><tr key={m.id}><td>{m.parent_id?'↳ ':''}{m.title}</td><td>{menus.find(p=>p.id===m.parent_id)?.title || 'منوی اصلی'}</td><td>{({text:'متن',photo:'عکس',document:'فایل',url:'لینک',submenu:'زیرمنو'} as Record<string,string>)[m.response_type]}</td><td>{m.is_active?'فعال':'غیرفعال'}</td><td><button className="outline-btn" onClick={()=>setMenuDraft({id:m.id,title:m.title,description:m.description||'',parentId:m.parent_id||'',responseType:m.response_type,responseContent:m.response_content||'',targetUrl:m.target_url||''})}>ویرایش</button> <button className="danger-btn" disabled={busy} onClick={()=>removeMenu(m)}>حذف</button></td></tr>)}
+              </tbody></table>{!menus.length?<div className="empty-inline">هنوز منویی نساخته‌ای. از فرم بالا اولین منو را ایجاد کن.</div>:null}</div>
+            </div>
+          </section>}
 
           {!loading && active === 'مدیریت کاربران' && isSuperAdmin && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اشتراک کاربران</h2><p>برای هر حساب کاربری تاریخ پایان اشتراک را تعیین کن.</p></div><UserCog className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت اشتراک</th><th>تاریخ انقضا</th><th>عملیات</th></tr></thead><tbody>{adminUsers.map(user => <tr key={user.id}><td>{user.name}</td><td dir="ltr">{user.email}</td><td>{user.role === 'super_admin' ? 'مدیر کل' : 'کاربر'}</td><td><span className={user.subscription_active ? 'status-pill good' : 'status-pill'}>{user.subscription_active ? 'فعال' : 'غیرفعال'}</span></td><td>{user.role === 'super_admin' ? '—' : <input aria-label={'تاریخ انقضای ' + user.name} type="date" value={adminExpiry[user.id] || ''} onChange={e => setAdminExpiry(current => ({ ...current, [user.id]: e.target.value }))}/>}</td><td>{user.role !== 'super_admin' && <button className="outline-btn" disabled={busy || !adminExpiry[user.id]} onClick={() => saveExpiry(user.id)}>ذخیره</button>}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="empty-inline">کاربری برای نمایش وجود ندارد.</div>}</div></section>}
 
