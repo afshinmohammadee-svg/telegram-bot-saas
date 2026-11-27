@@ -73,7 +73,9 @@ async function serveApi(req: ApiRequest, res: ApiResponse, url: URL) {
   let handler: ((req: ApiRequest, res: ApiResponse) => unknown) | null = null;
   const query = req.query;
 
-  if (path === "/api/admin" || path === "/api/admin/users" || path === "/api/admin/licenses" || path === "/api/admin/license-plans") {
+  if (path === "/api/admin/management-bot") {
+    handler = (await import("./api/admin/management-bot.js")).default;
+  } else if (path === "/api/admin" || path === "/api/admin/users" || path === "/api/admin/licenses" || path === "/api/admin/license-plans") {
     if (path.endsWith("/users")) query.resource = "users";
     if (path.endsWith("/licenses")) query.resource = "licenses";
     if (path.endsWith("/license-plans")) query.resource = "license-plans";
