@@ -87,9 +87,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               await showMenu(token,bot.id,callbackChatId,item.id);
             } else {
               const content = String(item.response_content ?? item.description ?? item.title);
-              const backTarget = item.parent_id
-                ? (await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [item.parent_id,bot.id])).rows[0]?.parent_id ?? "root"
-                : "root";
+              // Back returns to the menu that directly contained this item.
+              // Main remains a separate action that always returns to the root menu.
+              const backTarget = item.parent_id ?? "root";
               const keyboard = [
                 [{text:"⬅️ بازگشت",callback_data:"back:"+backTarget}],
                 [{text:"🏠 منوی اصلی",callback_data:"main:root"}],
