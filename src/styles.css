@@ -31,3 +31,8 @@
 @media(max-width:760px){.conversation-layout{grid-template-columns:1fr}.conversation-list{border-left:0;border-bottom:1px solid var(--line);max-height:220px}.conversation-item{padding:10px}.message-pane{min-height:300px}.detail-card{flex-wrap:wrap}.detail-main{min-width:120px}.rule-form{grid-template-columns:1fr}.rule-form .wide-field{grid-column:auto}.rule-row{gap:8px;flex-wrap:wrap}.rule-copy{flex-basis:65%}.settings-row{align-items:flex-start}.page-panel{padding:15px}}
 
 .data-table input[type=date]{max-width:145px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--text);padding:7px;font:10px 'Vazirmatn'}
+
+.auth-link-button{display:block;width:100%;margin-top:13px;border:0;background:transparent;color:#a99fff;font:500 11px 'Vazirmatn';cursor:pointer;padding:7px}
+.auth-session-bar .auth-telegram-link{color:#a99fff;text-decoration:none;border:1px solid #5e52d855;background:#5e52d822;border-radius:8px;padding:6px 10px;font-size:11px}
+.auth-session-bar .auth-telegram-link:hover{background:#5e52d844}
+.auth-inline-error{color:#ffb4b4!important;font-size:10px}
