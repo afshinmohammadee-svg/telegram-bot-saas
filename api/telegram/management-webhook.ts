@@ -310,9 +310,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
       if (menuSession.step === "add_content") {
         if (menuSession.draft?.responseType === "photo" && !photoFileId) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(menuSession.draft?.responseType === "photo" ? photoFileId : rawInput).trim().slice(0,4000);
+        const value=(menuSession.draft?.responseType === "photo" ? (photoFileId ?? "") : rawInput).trim().slice(0,4000);
         if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
-        await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
+        await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
         await saveSession("home",{},botId);
         await send(token,chatId,"✅ گزینه منو با موفقیت ثبت شد.",homeKeyboard);
         return json(res,200,{ok:true});
@@ -339,7 +339,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
         if (type === "photo" && !photoFileId) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(type === "photo" ? photoFileId : rawInput).trim().slice(0,4000);
+        const value=(type === "photo" ? (photoFileId ?? "") : rawInput).trim().slice(0,4000);
         if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
         await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,description=CASE WHEN $3='photo' THEN $5 ELSE description END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value,mediaCaption||null]);
         await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
