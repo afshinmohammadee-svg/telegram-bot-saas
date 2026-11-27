@@ -75,12 +75,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         if (callbackData.startsWith("menu:")) {
           const menuId = callbackData.slice(5);
           const selected = await db.query(
-            "SELECT id,title,description,parent_id,response_type,response_content,target_url FROM bot_menus WHERE id=$1 AND bot_id=$2 AND is_active=true",
+            `SELECT m.id,m.title,m.description,m.parent_id,m.response_type,m.response_content,m.target_url,
+                    EXISTS (SELECT 1 FROM bot_menus child WHERE child.parent_id=m.id AND child.bot_id=m.bot_id AND child.is_active=true) AS has_children
+               FROM bot_menus m WHERE m.id=$1 AND m.bot_id=$2 AND m.is_active=true`,
             [menuId,bot.id],
           );
           const item = selected.rows[0];
           if (item) {
-            if (item.response_type === "submenu") {
+            // Treat any item with active children as a submenu, even if it was saved with a content response type.
+            if (item.response_type === "submenu" || item.has_children === true) {
               await showMenu(token,bot.id,callbackChatId,item.id);
             } else {
               const content = String(item.response_content ?? item.description ?? item.title);
