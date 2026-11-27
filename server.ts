@@ -149,11 +149,19 @@ const server = createServer(async (incoming, res) => {
     const req = incoming as ApiRequest;
     req.query = queryObject(url);
     try {
-      req.body = await readBody(req);
+      // Better Auth must receive the original, unread request stream.
+      if (!(url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/"))) {
+        req.body = await readBody(req);
+      }
       await serveApi(req, res, url);
     } catch (error) {
       console.error("http_request_error", error);
-      sendJson(res, error instanceof Error && error.message === "Request body too large" ? 413 : 400, {
+      const status = error instanceof Error && error.message === "Request body too large"
+        ? 413
+        : error instanceof Error && error.message === "Invalid JSON body"
+          ? 400
+          : 500;
+      sendJson(res, status, {
         error: error instanceof Error ? error.message : "Request failed",
       });
     }
