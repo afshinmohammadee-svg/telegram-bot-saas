@@ -1,5 +1,4 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { json } from "../_lib/server.js";
 import conversationsListHandler from "../_lib/routes/conversations-list.js";
 import conversationMessagesHandler from "../_lib/routes/conversation-messages.js";
 
