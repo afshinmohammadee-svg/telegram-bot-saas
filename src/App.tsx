@@ -57,6 +57,10 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
   const [matchType, setMatchType] = useState('contains')
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [adminExpiry, setAdminExpiry] = useState<Record<string, string>>({})
+  const [licensePlans, setLicensePlans] = useState<LicensePlan[]>([])
+  const [licenseItems, setLicenseItems] = useState<LicenseItem[]>([])
+  const [planDraft, setPlanDraft] = useState({ code: '', name: '', description: '', durationDays: '30', maxBots: '1', maxMenus: '20', maxVisitors: '', features: { conversations: true, autoReplies: true, menuBuilder: true } })
+  const [licenseDraft, setLicenseDraft] = useState({ userId: '', planId: '', notes: '' })
 
   const refreshDashboard = useCallback(async () => {
     const [dash, botData] = await Promise.all([api<Dashboard>('/api/dashboard'), api<{ bots: BotInfo[] }>('/api/bots')])
