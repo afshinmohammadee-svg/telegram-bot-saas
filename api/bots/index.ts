@@ -26,6 +26,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const me = await telegram<TelegramMe>(token, "getMe");
     const botId = crypto.randomUUID();
     const webhookSecret = randomBytes(32).toString("hex");
+    if (process.env.VERCEL_ENV === "preview") {
+      return json(res, 409, { error: "اعتبارسنجی توکن انجام شد؛ برای جلوگیری از ارسال webhook به نسخه اشتباه، اتصال واقعی ربات پس از انتشار نسخه اصلی فعال می‌شود." });
+    }
     const appUrl = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/$/, "");
     if (!appUrl.startsWith("https://")) return json(res, 500, { error: "نشانی امن برنامه روی سرور تنظیم نشده است." });
 
@@ -57,7 +60,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         drop_pending_updates: false,
       });
     } catch (error) {
-      await db.query("UPDATE bots SET status='error', last_error=$2, updated_at=now() WHERE id=$1", [botId, error instanceof Error ? error.message.slice(0, 500) : "Webhook setup failed"]);
+      await db.query("DELETE FROM bots WHERE id=$1 AND owner_id=$2", [botId, user.id]);
       return json(res, 502, { error: "ربات اعتبارسنجی شد اما ثبت webhook ناموفق بود. می‌توانی دوباره تلاش کنی یا با پشتیبانی تماس بگیری." });
     }
     return json(res, 201, { bot: { id: botId, username: me.username ?? null, display_name: me.first_name ?? null, status: "active" } });
