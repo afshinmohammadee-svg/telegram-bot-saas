@@ -170,9 +170,9 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
       await api('/api/admin/license-plans', { method: 'POST', body: JSON.stringify({
         code: planDraft.code, name: planDraft.name, description: planDraft.description,
         durationDays: Number(planDraft.durationDays), maxBots: Number(planDraft.maxBots),
-        maxMenus: Number(planDraft.maxMenus), maxVisitors: planDraft.maxVisitors || null,
+        maxMenus: Number(planDraft.maxMenus), maxVisitors: planDraft.maxVisitors || null, features: planDraft.features,
       }) })
-      setPlanDraft({ code:'', name:'', description:'', durationDays:'30', maxBots:'1', maxMenus:'20', maxVisitors:'' })
+      setPlanDraft({ code:'', name:'', description:'', durationDays:'30', maxBots:'1', maxMenus:'20', maxVisitors:'', features:{ conversations:true, autoReplies:true, menuBuilder:true } })
       const data = await api<{ plans: LicensePlan[] }>('/api/admin/license-plans'); setLicensePlans(data.plans)
       setNotice('پلن لایسنس ایجاد شد.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'ساخت پلن ناموفق بود.') }
@@ -233,7 +233,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
         <div className="nav-label">منوی اصلی</div>
         <nav>{nav.map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span>{label === 'گفتگوها' && dashboard?.unreadMessages ? <i className="nav-count">{dashboard.unreadMessages}</i> : null}</button>)}</nav>
         <div className="nav-label second">مدیریت</div>
-        <nav>{tools.filter(item => item.label !== 'مدیریت کاربران' || isSuperAdmin).map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+        <nav>{tools.filter(item => (item.label !== 'مدیریت کاربران' && item.label !== 'مدیریت لایسنس') || isSuperAdmin).map(({label, icon: Icon}) => <button key={label} className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => changePage(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
         <div className="sidebar-bottom"><div className="help-card"><div className="help-icon"><CircleHelp size={18}/></div><b>راهنمای شروع</b><p>برای اتصال ربات، از BotFather توکن بگیر و در بخش مدیریت ربات وارد کن.</p><button onClick={() => changePage('مدیریت ربات')}>مدیریت ربات <span>←</span></button></div><div className="profile"><div className="profile-avatar">A</div><div><b>حساب کاربری</b><small>پنل اختصاصی</small></div><MoreHorizontal size={19}/></div></div>
       </aside>
 
@@ -283,6 +283,12 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
                 <label>حداکثر منو<input type="number" min="0" max="10000" value={planDraft.maxMenus} onChange={e=>setPlanDraft(v=>({...v,maxMenus:e.target.value}))} required/></label>
                 <label>سقف بازدیدکننده (خالی = نامحدود)<input type="number" min="0" value={planDraft.maxVisitors} onChange={e=>setPlanDraft(v=>({...v,maxVisitors:e.target.value}))}/></label>
                 <label className="wide-field">توضیحات<input value={planDraft.description} onChange={e=>setPlanDraft(v=>({...v,description:e.target.value}))} placeholder="توضیح کوتاه پلن"/></label>
+                <div className="wide-field" style={{display:'flex',gap:18,flexWrap:'wrap',alignItems:'center'}}>
+                  <b style={{fontSize:11}}>امکانات فعال پلن:</b>
+                  <label style={{display:'flex',gap:6,alignItems:'center'}}><input type="checkbox" checked={planDraft.features.conversations} onChange={e=>setPlanDraft(v=>({...v,features:{...v.features,conversations:e.target.checked}}))}/> مدیریت گفتگوها</label>
+                  <label style={{display:'flex',gap:6,alignItems:'center'}}><input type="checkbox" checked={planDraft.features.autoReplies} onChange={e=>setPlanDraft(v=>({...v,features:{...v.features,autoReplies:e.target.checked}}))}/> پاسخ خودکار</label>
+                  <label style={{display:'flex',gap:6,alignItems:'center'}}><input type="checkbox" checked={planDraft.features.menuBuilder} onChange={e=>setPlanDraft(v=>({...v,features:{...v.features,menuBuilder:e.target.checked}}))}/> منوساز</label>
+                </div>
                 <button className="primary-btn" disabled={busy}><Plus size={16}/> ایجاد پلن</button>
               </form>
             </div>
