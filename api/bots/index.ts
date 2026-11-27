@@ -39,11 +39,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const me = await telegram<TelegramMe>(token, "getMe");
     const botId = crypto.randomUUID();
     const webhookSecret = randomBytes(32).toString("hex");
-    if (process.env.VERCEL_ENV === "preview") {
-      return json(res, 409, { error: "اعتبارسنجی توکن انجام شد؛ برای جلوگیری از ارسال webhook به نسخه اشتباه، اتصال واقعی ربات پس از انتشار نسخه اصلی فعال می‌شود." });
+    const isPreview = process.env.VERCEL_ENV === "preview";
+    if (isPreview && process.env.ALLOW_PREVIEW_TELEGRAM_WEBHOOK !== "true") {
+      return json(res, 403, { error: "اتصال ربات در پیش‌نمایش هنوز فعال نشده است." });
     }
     const appUrl = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/$/, "");
     if (!appUrl.startsWith("https://")) return json(res, 500, { error: "نشانی امن برنامه روی سرور تنظیم نشده است." });
+    if (isPreview) {
+      const configuredHost = new URL(appUrl).host;
+      const webhookInfo = await telegram<{ url?: string }>(token, "getWebhookInfo");
+      if (webhookInfo.url) {
+        let currentHost = "";
+        try { currentHost = new URL(webhookInfo.url).host; } catch { /* malformed webhook URL is treated as unsafe */ }
+        if (!currentHost || currentHost !== configuredHost) {
+          return json(res, 409, { error: "این ربات از قبل به نشانی دیگری متصل است. برای جلوگیری از قطع ربات اصلی، وبهوک تغییر داده نشد؛ از یک ربات آزمایشی تازه استفاده کن." });
+        }
+      }
+    }
 
     const client = await db.connect();
     try {
