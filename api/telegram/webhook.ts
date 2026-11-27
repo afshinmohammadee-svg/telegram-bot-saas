@@ -86,7 +86,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 text:entry.title.slice(0,64),
                 ...(entry.response_type==="url" && entry.target_url ? {url:entry.target_url}:{callback_data:"menu:"+entry.id}),
               }]);
-              if (item.parent_id) keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+item.parent_id}]);
+              if (item.parent_id) {
+                const parentInfo = await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2", [item.parent_id,bot.id]);
+                keyboard.push([{text:"⬅️ بازگشت",callback_data:"back:"+(parentInfo.rows[0]?.parent_id ?? "root")}]);
+              }
               const replyMarkup = keyboard.length ? {reply_markup:{inline_keyboard:keyboard}} : {};
               if (item.response_type === "photo") {
                 await telegram(token,"sendPhoto",{chat_id:callbackChatId,photo:content,...replyMarkup});
@@ -111,6 +114,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!message || !sender || message.chat.type !== "private" || sender.is_bot) return json(res, 200, { ok: true });
 
     const text = (message.text ?? "").slice(0, 4096);
+    const accessResult = await db.query(
+      `SELECT limits_snapshot FROM licenses
+        WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now()
+        ORDER BY expires_at DESC LIMIT 1`,
+      [bot.owner_id],
+    );
+    const visitorLimit = accessResult.rows[0]?.limits_snapshot?.maxVisitors;
+    if (Number.isInteger(visitorLimit) && visitorLimit >= 0) {
+      const knownVisitor = await db.query(
+        "SELECT 1 FROM bot_visitors WHERE bot_id=$1 AND telegram_user_id=$2 LIMIT 1",
+        [bot.id,sender.id],
+      );
+      if (!knownVisitor.rowCount) {
+        const visitorCount = await db.query("SELECT count(*)::int AS total FROM bot_visitors WHERE bot_id=$1", [bot.id]);
+        if (visitorCount.rows[0].total >= visitorLimit) return json(res,200,{ok:true,visitorLimitReached:true});
+      }
+    }
     const client = await db.connect();
     let visitorId: string;
     let conversationId: string;
