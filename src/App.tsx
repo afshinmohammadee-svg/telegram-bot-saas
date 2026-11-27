@@ -144,6 +144,16 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
     finally { setBusy(false) }
   }
 
+  async function reconnectBot() {
+    if (!bot || !window.confirm('وبهوک همین ربات روی نسخه آزمایشی دوباره ثبت شود؟ اطلاعات و گفتگوها حفظ می‌شوند و وبهوک نشانی‌های دیگر تغییر نخواهد کرد.')) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api('/api/bots?resource=webhook-reconnect', { method: 'POST', body: JSON.stringify({ botId: bot.id }) })
+      setNotice('وبهوک ربات در نسخه آزمایشی دوباره ثبت شد.')
+      await refreshDashboard()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'ثبت دوباره وبهوک ناموفق بود.') }
+    finally { setBusy(false) }
+  }
   async function disableBot() {
     if (!bot || !window.confirm('ربات غیرفعال شود؟ اطلاعات و گفتگوهای ذخیره‌شده حذف نمی‌شوند.')) return
     setBusy(true); setError('')
@@ -323,7 +333,7 @@ export default function App({ isSuperAdmin = false }: { isSuperAdmin?: boolean }
             </section>
           </>}
 
-          {!loading && active === 'مدیریت ربات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اتصال ربات</h2><p>توکن ربات به‌صورت رمزنگاری‌شده نگهداری می‌شود.</p></div><Bot className="muted-icon"/></div>{bot ? <div className="detail-card"><div className="detail-icon"><Bot size={27}/></div><div className="detail-main"><b>{bot.display_name || 'ربات تلگرام'}</b><span dir="ltr">@{bot.username || '—'}</span><small>شناسه: {bot.id}</small></div><span className={bot.status === 'active' ? 'status-pill good' : 'status-pill'}>{bot.status === 'active' ? 'فعال' : bot.status}</span><button className="danger-btn" disabled={busy || bot.status === 'disabled'} onClick={disableBot}><Power size={15}/> غیرفعال‌سازی</button></div> : <div className="empty-inline"><Bot size={30}/><b>هنوز رباتی متصل نیست</b><p>توکن ربات را از BotFather دریافت کن و اتصال را انجام بده.</p><button className="primary-btn" onClick={() => setShowConnect(true)}><Plus size={17}/> اتصال ربات</button></div>}</section>}
+          {!loading && active === 'مدیریت ربات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اتصال ربات</h2><p>توکن ربات به‌صورت رمزنگاری‌شده نگهداری می‌شود.</p></div><Bot className="muted-icon"/></div>{bot ? <div className="detail-card"><div className="detail-icon"><Bot size={27}/></div><div className="detail-main"><b>{bot.display_name || 'ربات تلگرام'}</b><span dir="ltr">@{bot.username || '—'}</span><small>شناسه: {bot.id}</small></div><span className={bot.status === 'active' ? 'status-pill good' : 'status-pill'}>{bot.status === 'active' ? 'فعال' : bot.status}</span><button className="outline-btn" disabled={busy || bot.status !== 'active'} onClick={reconnectBot}><RefreshCw size={15}/> ثبت دوباره وبهوک (Preview)</button><button className="danger-btn" disabled={busy || bot.status === 'disabled'} onClick={disableBot}><Power size={15}/> غیرفعال‌سازی</button></div> : <div className="empty-inline"><Bot size={30}/><b>هنوز رباتی متصل نیست</b><p>توکن ربات را از BotFather دریافت کن و اتصال را انجام بده.</p><button className="primary-btn" onClick={() => setShowConnect(true)}><Plus size={17}/> اتصال ربات</button></div>}</section>}
 
           {!loading && active === 'گفتگوها' && <section className="panel page-panel"><div className="panel-heading"><div><h2>صندوق گفتگوها</h2><p>{conversations.length.toLocaleString('fa-IR')} گفتگو</p></div><MessageCircle className="muted-icon"/></div>{!bot ? <div className="empty-inline"><Bot size={30}/><b>ابتدا رباتت را متصل کن</b></div> : <div className="conversation-layout"><div className="conversation-list">{conversations.length ? conversations.map(item => <button key={item.id} className={selectedConversation === item.id ? 'conversation-item selected' : 'conversation-item'} onClick={() => setSelectedConversation(item.id)}><span className="visitor-avatar">{(item.first_name || item.username || '؟').slice(0,1)}</span><span className="conversation-meta"><b>{fullName(item)}</b><small>{item.last_message || 'بدون متن'}</small><time>{date(item.last_message_at)}</time></span>{item.unread_count > 0 && <i className="unread-pill">{item.unread_count}</i>}</button>) : <div className="empty-inline">هنوز گفتگویی ثبت نشده است.</div>}</div><div className="message-pane">{selectedConversation ? <><div className="message-list">{messages.map(message => <div key={message.id} className={message.direction === 'outbound' ? 'message-bubble outgoing' : 'message-bubble'}><p>{message.text_body || 'پیام غیرمتنی'}</p><time>{date(message.created_at)}</time></div>)}</div><form className="reply-form" onSubmit={sendReply}><input value={reply} onChange={e => setReply(e.target.value)} placeholder="پیامت را بنویس..." maxLength={4096}/><button className="primary-btn" disabled={busy || !reply.trim()}><Send size={16}/> ارسال</button></form></> : <div className="empty-inline"><MessageCircle size={30}/><span>برای مشاهده پیام‌ها یک گفتگو را انتخاب کن.</span></div>}</div></div>}</section>}
 
