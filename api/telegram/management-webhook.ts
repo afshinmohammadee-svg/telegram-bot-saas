@@ -17,6 +17,7 @@ const adminKeyboard = {
 const customerKeyboard = {
   keyboard: [
     [{ text: "📊 وضعیت لایسنس" }, { text: "🤖 ربات‌های من" }],
+    [{ text: "⏸ توقف ربات" }, { text: "▶️ فعال‌سازی ربات" }],
     [{ text: "🔗 راهنمای اتصال" }, { text: "ℹ️ راهنما" }],
   ],
   resize_keyboard: true,
@@ -184,6 +185,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const lines = result.rows.map((bot: {name:string;username:string|null;status:string}) =>
         `• ${bot.name}${bot.username ? " (@" + bot.username + ")" : ""} — ${bot.status}`);
       await send(token, chatId, lines.length ? "🤖 ربات‌های متعلق به حساب تو:\n" + lines.join("\n") : "هنوز رباتی برای این حساب ثبت نشده است.", customerKeyboard);
+    } else if (["⏸ توقف ربات", "▶️ فعال‌سازی ربات"].includes(command)) {
+      const owned = await db.query("SELECT id,username,status FROM bots WHERE owner_id=$1 LIMIT 1", [account.rows[0].id]);
+      if (!owned.rowCount) {
+        await send(token, chatId, "هنوز رباتی به حساب تو متصل نشده است.", customerKeyboard);
+      } else if (command === "⏸ توقف ربات") {
+        await db.query("UPDATE bots SET status='disabled',updated_at=now() WHERE id=$1 AND owner_id=$2", [owned.rows[0].id,account.rows[0].id]);
+        await send(token, chatId, "⏸ ربات " + (owned.rows[0].username ? "@" + owned.rows[0].username : "") + " متوقف شد. اطلاعات و گفتگوهای قبلی حفظ شده‌اند. برای فعال‌سازی دوباره از همین منو استفاده کن.", customerKeyboard);
+      } else {
+        const activeLicense = await db.query("SELECT 1 FROM licenses WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now() LIMIT 1", [account.rows[0].id]);
+        if (!activeLicense.rowCount) {
+          await send(token, chatId, "برای فعال‌سازی ربات به لایسنس معتبر نیاز داری. لطفاً برای تمدید با مدیر پلتفرم هماهنگ کن.", customerKeyboard);
+        } else {
+          await db.query("UPDATE bots SET status='active',last_error=NULL,updated_at=now() WHERE id=$1 AND owner_id=$2", [owned.rows[0].id,account.rows[0].id]);
+          await send(token, chatId, "▶️ ربات فعال شد. پیام‌های جدید دوباره پردازش می‌شوند.", customerKeyboard);
+        }
+      }
     } else if (["🔗 راهنمای اتصال"].includes(command)) {
       await send(token, chatId, "برای اتصال حساب یا مدیریت اطلاعات ورود، وارد پنل وب تلگرام‌یار شو و از بخش تنظیمات، گزینه اتصال تلگرام را انتخاب کن. لینک اتصال یک‌بارمصرف است و فقط ۱۰ دقیقه اعتبار دارد.", customerKeyboard);
     } else {
