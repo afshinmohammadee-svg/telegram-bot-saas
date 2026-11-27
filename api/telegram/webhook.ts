@@ -80,15 +80,8 @@ async function showMenu(token: string, botId: string, chatId: number, parentId: 
   const text = parentId
     ? "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:")
     : "<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text || "برای ادامه یکی از گزینه‌ها را انتخاب کنید."));
-  const payload = {
-    chat_id:chatId,
-    caption:text,
-    text,
-    parse_mode:"HTML",
-    reply_markup:{inline_keyboard:keyboard},
-  };
   if (!parentId && appearance.banner_file_id) {
-    await telegram(token,"sendPhoto",{chat_id:chatId,photo:appearance.banner_file_id,caption,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
+    await telegram(token,"sendPhoto",{chat_id:chatId,photo:appearance.banner_file_id,caption:text,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
   } else {
     await telegram(token,"sendMessage",{chat_id:chatId,text,parse_mode:"HTML",reply_markup:{inline_keyboard:keyboard}});
   }
