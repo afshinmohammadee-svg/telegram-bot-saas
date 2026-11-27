@@ -33,10 +33,32 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) throw new Error(data.error || 'درخواست انجام نشد.')
   return data as T
 }
-const date = (value?: string | null) => value ? new Date(value).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const date = (value?: string | null) => value ? new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—'
+function jalaliToGregorian(input: string): string | null {
+  const match = input.trim().match(/^(\\d{4})[\\/-](\\d{1,2})[\\/-](\\d{1,2})$/)
+  if (!match) return null
+  const jy=Number(match[1]), jm=Number(match[2]), jd=Number(match[3])
+  if (jy<1300 || jm<1 || jm>12 || jd<1 || jd>31) return null
+  const jy2=jy-(jy>=0?979:0), days=365*jy2+Math.floor(jy2/33)*8+Math.floor(((jy2%33)+3)/4)+78+jd+(jm<7?(jm-1)*31:(jm-7)*30+186)
+  let gy=400*Math.floor(days/146097); let rem=days%146097
+  if(rem>36524){gy+=100*Math.floor(--rem/36524);rem%=36524;if(rem>=365)rem++}
+  gy+=4*Math.floor(rem/1461);rem%=1461
+  if(rem>365){gy+=Math.floor((rem-1)/365);rem=(rem-1)%365}
+  let gd=rem+1
+  const leap=(gy%4===0&&gy%100!==0)||gy%400===0
+  const monthDays=[0,31,leap?29:28,31,30,31,30,31,31,30,31,30,31]
+  let gm=1;while(gm<=12&&gd>monthDays[gm]){gd-=monthDays[gm];gm++}
+  const out=`${String(gy).padStart(4,'0')}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}`
+  const check=new Date(out+'T12:00:00Z')
+  if(!Number.isFinite(check.getTime()) || check.toISOString().slice(0,10)!==out) return null
+  const shown=new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'}).format(check)
+  const parts=shown.match(/(\\d+)/g)?.map(Number)
+  return parts && parts[0]===jy && parts[1]===jm && parts[2]===jd ? out : null
+}
+const gregorianToJalali = (value?: string | null) => value ? new Intl.DateTimeFormat('en-u-ca-persian',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'UTC'}).format(new Date(value)).replace(/\\u200e/g,'') : ''
 const fullName = (item: { first_name?: string | null; last_name?: string | null; username?: string | null }) => [item.first_name, item.last_name].filter(Boolean).join(' ') || (item.username ? '@' + item.username : 'کاربر تلگرام')
 
-export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdmin?: boolean; onCreateUser?: () => void }) {
+export default function App({ isSuperAdmin = false, onCreateUser, onUserCreated }: { isSuperAdmin?: boolean; onCreateUser?: () => void; onUserCreated?: () => void }) {
   const [dark, setDark] = useState(true)
   const [active, setActive] = useState<Page>(isSuperAdmin ? 'مدیریت کاربران' : 'نمای کلی')
   const [mobileNav, setMobileNav] = useState(false)
@@ -106,6 +128,11 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
       if (active === 'مدیریت کاربران' && isSuperAdmin) {
         const data = await api<{ users: AdminUser[] }>('/api/admin/users')
         setAdminUsers(data.users)
+        setAdminExpiry(current => {
+          const next = { ...current }
+          for (const user of data.users) if (user.expires_at && !next[user.id]) next[user.id] = gregorianToJalali(user.expires_at)
+          return next
+        })
       }
       if (active === 'مدیریت لایسنس' && isSuperAdmin) {
         const [plansData, licensesData, usersData] = await Promise.all([
@@ -219,14 +246,17 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
   }
 
   async function saveExpiry(userId: string) {
-    const expiresAt = adminExpiry[userId]
-    if (!expiresAt) { setError('تاریخ انقضا را انتخاب کن.'); return }
+    const jalaliDate = adminExpiry[userId]
+    const expiresAt = jalaliDate ? jalaliToGregorian(jalaliDate) : null
+    if (!expiresAt) { setError('تاریخ شمسی معتبر وارد کن؛ نمونه: ۱۴۰۵/۱۲/۲۹'); return }
     setBusy(true); setError('')
     try {
       await api('/api/admin/users?id=' + encodeURIComponent(userId), { method: 'PATCH', body: JSON.stringify({ expiresAt }) })
       setNotice('تاریخ انقضای اشتراک ذخیره شد.')
+      setAdminExpiry(current => ({ ...current, [userId]: gregorianToJalali(expiresAt) }))
       const data = await api<{ users: AdminUser[] }>('/api/admin/users')
       setAdminUsers(data.users)
+      setAdminExpiry(current => ({...current, [userId]: gregorianToJalali(data.users.find(user=>user.id===userId)?.expires_at)}))
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'ذخیره اشتراک ناموفق بود.') }
     finally { setBusy(false) }
   }
@@ -421,7 +451,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
             </div>
           </section>}
 
-          {!loading && active === 'مدیریت کاربران' && isSuperAdmin && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اشتراک کاربران</h2><p>برای هر حساب کاربری تاریخ پایان اشتراک را تعیین کن.</p></div><UserCog className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت اشتراک</th><th>تاریخ انقضا</th><th>عملیات</th></tr></thead><tbody>{adminUsers.map(user => <tr key={user.id}><td>{user.name}</td><td dir="ltr">{user.email}</td><td>{user.role === 'super_admin' ? 'مدیر کل' : 'کاربر'}</td><td><span className={user.subscription_active ? 'status-pill good' : 'status-pill'}>{user.subscription_active ? 'فعال' : 'غیرفعال'}</span></td><td>{user.role === 'super_admin' ? '—' : <input aria-label={'تاریخ انقضای ' + user.name} type="date" value={adminExpiry[user.id] || ''} onChange={e => setAdminExpiry(current => ({ ...current, [user.id]: e.target.value }))}/>}</td><td>{user.role !== 'super_admin' && <button className="outline-btn" disabled={busy || !adminExpiry[user.id]} onClick={() => saveExpiry(user.id)}>ذخیره</button>}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="empty-inline">کاربری برای نمایش وجود ندارد.</div>}</div></section>}
+          {!loading && active === 'مدیریت کاربران' && isSuperAdmin && <section className="panel page-panel"><div className="panel-heading"><div><h2>مدیریت اشتراک کاربران</h2><p>برای هر حساب کاربری تاریخ پایان اشتراک را تعیین کن.</p></div><UserCog className="muted-icon"/></div><div className="table-wrap"><table className="data-table"><thead><tr><th>نام</th><th>ایمیل</th><th>نقش</th><th>وضعیت اشتراک</th><th>تاریخ انقضا</th><th>عملیات</th></tr></thead><tbody>{adminUsers.map(user => <tr key={user.id}><td>{user.name}</td><td dir="ltr">{user.email}</td><td>{user.role === 'super_admin' ? 'مدیر کل' : 'کاربر'}</td><td><span className={user.subscription_active ? 'status-pill good' : 'status-pill'}>{user.subscription_active ? 'فعال' : 'غیرفعال'}</span></td><td>{user.role === 'super_admin' ? '—' : <div style={{display:'grid',gap:5,minWidth:145}}><strong style={{fontSize:12}}>{date(user.expires_at)}</strong><input aria-label={'تاریخ انقضای شمسی ' + user.name} type="text" inputMode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹" value={adminExpiry[user.id] || ''} onChange={e => setAdminExpiry(current => ({ ...current, [user.id]: e.target.value.replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))) }))}/></div>}</td><td>{user.role !== 'super_admin' && <button className="outline-btn" disabled={busy || !adminExpiry[user.id]} onClick={() => saveExpiry(user.id)}>ذخیره</button>}</td></tr>)}</tbody></table>{!adminUsers.length && <div className="empty-inline">کاربری برای نمایش وجود ندارد.</div>}</div></section>}
 
 
           {!loading && active === 'مدیریت پلن‌ها' && isSuperAdmin && <section className="page-panel">
