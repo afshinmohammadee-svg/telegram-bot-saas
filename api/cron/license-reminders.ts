@@ -1,11 +1,11 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { db, json, telegram } from "../_lib/server.js";
+import { db, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "GET" && req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
   const secret = process.env.CRON_SECRET;
   const authorization = req.headers.authorization;
-  if (!secret || authorization !== "Bearer " + secret) return json(res, 401, { error: "Unauthorized" });
+  if (!secret || typeof authorization !== "string" || !authorization.startsWith("Bearer ") || !safeEqualHex(sha256(authorization.slice(7)), sha256(secret))) return json(res, 401, { error: "Unauthorized" });
   const token = process.env.MANAGEMENT_BOT_TOKEN;
   if (!token) return json(res, 503, { error: "Management bot is not configured" });
 
