@@ -16,6 +16,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!user) return;
     const bot = await ownedBot(user.id);
     if (!bot) return json(res, 409, { error: "ابتدا ربات تلگرام خود را متصل کن." });
+    const license = await db.query(
+      "SELECT features_snapshot FROM licenses WHERE user_id=$1 AND status='active' AND starts_at<=now() AND expires_at>now() ORDER BY expires_at DESC LIMIT 1",
+      [user.id],
+    );
+    if (license.rows[0]?.features_snapshot?.menuBuilder !== true) return json(res,403,{error:"امکان شخصی‌سازی منو در لایسنس شما فعال نیست."});
 
     if (req.method === "GET") {
       const result = await db.query(
