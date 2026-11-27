@@ -10,6 +10,46 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (req.query.resource === "menus") return menuHandler(req,res);
     const user = await requireUser(req, res);
     if (!user) return;
+    if (req.method === "GET" && req.query.resource === "webhook-status") {
+      const rawBotId = req.query.botId;
+      const botId = Array.isArray(rawBotId) ? rawBotId[0] : rawBotId;
+      const bot = await ownedBot(user.id, botId);
+      if (!bot || !bot.encrypted_token) return json(res, 404, { error: "ربات موردنظر پیدا نشد." });
+      const info = await telegram<{
+        url?: string;
+        pending_update_count?: number;
+        ip_address?: string;
+        last_error_date?: number;
+        last_error_message?: string;
+        max_connections?: number;
+        allowed_updates?: string[];
+        has_custom_certificate?: boolean;
+      }>(decryptToken(bot.encrypted_token), "getWebhookInfo");
+      let webhookHost: string | null = null;
+      let webhookPath: string | null = null;
+      if (info.url) {
+        try {
+          const parsed = new URL(info.url);
+          webhookHost = parsed.host;
+          webhookPath = parsed.pathname;
+        } catch { /* Never return an unparsed webhook URL. */ }
+      }
+      return json(res, 200, {
+        bot: { id: bot.id, username: bot.username, status: bot.status },
+        webhook: {
+          configured: Boolean(info.url),
+          host: webhookHost,
+          path: webhookPath,
+          pending_update_count: info.pending_update_count ?? 0,
+          ip_address: info.ip_address ?? null,
+          last_error_date: info.last_error_date ?? null,
+          last_error_message: info.last_error_message ?? null,
+          max_connections: info.max_connections ?? null,
+          allowed_updates: info.allowed_updates ?? null,
+          has_custom_certificate: info.has_custom_certificate ?? false,
+        },
+      });
+    }
     if (req.method === "GET") {
       const result = await db.query(
         "SELECT id, username, display_name, status, last_error, connected_at, created_at FROM bots WHERE owner_id=$1 ORDER BY created_at DESC",
