@@ -69,7 +69,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               const content = String(item.response_content ?? item.description ?? item.title);
               // Back returns to the menu that directly contained this item.
               // Main remains a separate action that always returns to the root menu.
-              const backTarget = item.parent_id ?? "root";
               const keyboard = {
                 keyboard: [[{text:"⬅️ بازگشت"}],[{text:"🏠 منوی اصلی"}]],
                 resize_keyboard: true,
