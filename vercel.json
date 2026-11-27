@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/api/bot-menus",
+      "destination": "/api/bots?resource=menus"
+    },
+    {
       "source": "/api/auth/:authPath*",
       "destination": "/api/auth/dispatch?__authPath=:authPath*"
     }
