@@ -85,6 +85,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
     const appUrl = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/$/, "");
     if (!appUrl.startsWith("https://")) return json(res, 500, { error: "نشانی امن برنامه روی سرور تنظیم نشده است." });
+    const webhookUrl = new URL(`${appUrl}/api/telegram/webhook`);
+    webhookUrl.searchParams.set("botId", botId);
+    if (isPreview) {
+      const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+      if (!bypassSecret) return json(res, 503, { error: "دسترسی امن وبهوک در پیش‌نمایش تنظیم نشده است." });
+      webhookUrl.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+    }
     if (isPreview) {
       const configuredHost = new URL(appUrl).host;
       const webhookInfo = await telegram<{ url?: string }>(token, "getWebhookInfo");
@@ -119,7 +126,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     try {
       await telegram(token, "setWebhook", {
-        url: `${appUrl}/api/telegram/webhook?botId=${botId}`,
+        url: webhookUrl.toString(),
         secret_token: webhookSecret,
         allowed_updates: ["message", "edited_message", "callback_query"],
         drop_pending_updates: false,
