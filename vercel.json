@@ -2,6 +2,30 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/api/admin/users",
+      "destination": "/api/admin?resource=users"
+    },
+    {
+      "source": "/api/admin/licenses",
+      "destination": "/api/admin?resource=licenses"
+    },
+    {
+      "source": "/api/admin/license-plans",
+      "destination": "/api/admin?resource=license-plans"
+    },
+    {
+      "source": "/api/bots/start-link",
+      "destination": "/api/bots?resource=start-link"
+    },
+    {
+      "source": "/api/bots/:botId",
+      "destination": "/api/bots?resource=detail&botId=:botId"
+    },
+    {
+      "source": "/api/conversations/:conversationId/messages",
+      "destination": "/api/conversations?resource=messages&conversationId=:conversationId"
+    },
+    {
       "source": "/api/bot-menus",
       "destination": "/api/bots?resource=menus"
     },
