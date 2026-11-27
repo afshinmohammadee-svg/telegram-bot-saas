@@ -18,7 +18,7 @@ async function menuKeyboard(botId:string,parentId:string|null,appearance:MenuApp
 async function sendMenuPhoto(token:string,chatId:number,photo:string,caption?:string,replyMarkup?:Record<string,unknown>,parseMode?:string){
   // Telegram file_id values belong to the bot that received the upload. Only portable
   // byte payloads created by the management bot may be forwarded to customer bots.
-  const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+/=]+)$/);
+  const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+\\/=]+)$/);
   if(!match) throw new Error("این عکس قدیمی است و باید دوباره از ربات مرکزی بارگذاری شود.");
   const mime=match[1];
   const bytes=Buffer.from(match[2],"base64");
