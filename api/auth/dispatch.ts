@@ -1,5 +1,5 @@
 import { toNodeHandler } from "better-auth/node";
-import { auth } from "../../../src/lib/auth.js";
+import { auth } from "../../src/lib/auth.js";
 
 const authHandler = toNodeHandler(auth);
 
