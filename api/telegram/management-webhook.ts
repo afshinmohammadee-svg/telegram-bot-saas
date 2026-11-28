@@ -74,7 +74,6 @@ async function persistManagedImage(botId: string, kind: "banner" | "menu", menuI
     if (isManagedImageKey(oldValue, botId)) oldKey = oldValue;
     const quota = await client.query("SELECT (SELECT count(*)::int FROM bot_images WHERE bot_id=$1 AND status='active') AS stored_count, (SELECT count(*)::int FROM bot_menu_appearance WHERE bot_id=$1 AND banner_file_id LIKE 'tgphoto:%') + (SELECT count(*)::int FROM bot_menus WHERE bot_id=$1 AND response_type='photo' AND response_content LIKE 'tgphoto:%') AS legacy_count", [botId]);
     const replacing = isManagedImageKey(oldValue, botId) || isLegacyTelegramPhoto(oldValue);
-    const total = Number(quota.rows[0].stored_count) + Number(quota.rows[0].legacy_count);
     if (exceedsImageQuota(Number(quota.rows[0].stored_count), Number(quota.rows[0].legacy_count), replacing)) throw new Error("IMAGE_QUOTA_EXCEEDED");
     if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [botId, oldKey]);
     await client.query("INSERT INTO bot_images(bot_id,kind,menu_id,object_key,mime_type,size_bytes,sha256,status) VALUES($1,$2,$3,$4,$5,$6,$7,'active')", [botId, kind, menuId, key, detected.mimeType, bytes.length, imageSha256(bytes)]);
