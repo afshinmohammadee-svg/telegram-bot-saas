@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import type { ApiRequest, ApiResponse } from "./server.js";
 import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
 import { deleteImage, putImage } from "./object-storage.js";
@@ -66,7 +67,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
 
     let oldKey: string | null = null;
-    let client;
+    let client: PoolClient;
     try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
     try {
       await client.query("BEGIN");
