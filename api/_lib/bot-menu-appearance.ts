@@ -8,6 +8,7 @@ const defaults = {
   welcome_title: "به فضای اختصاصی ما خوش آمدید",
   welcome_text: "برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",
   banner_file_id: "",
+  visitor_messages_enabled: true,
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -24,7 +25,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "GET") {
       const result = await db.query(
-        "SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at FROM bot_menu_appearance WHERE bot_id=$1",
+        "SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,visitor_messages_enabled,updated_at FROM bot_menu_appearance WHERE bot_id=$1",
         [bot.id],
       );
       return json(res, 200, { appearance: { ...defaults, ...(result.rows[0] ?? {}) } });
@@ -38,18 +39,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const title = String(body.welcome_title ?? defaults.welcome_title).trim().slice(0, 120);
     const welcome = String(body.welcome_text ?? defaults.welcome_text).trim().slice(0, 700);
     const banner = String(body.banner_file_id ?? "").trim().slice(0, 500);
+    const visitorMessagesEnabled = body.visitor_messages_enabled === undefined ? true : body.visitor_messages_enabled === true;
     if (!["luxury_modern","minimal","vibrant"].includes(theme)) return json(res,400,{error:"قالب انتخاب‌شده معتبر نیست."});
     if (!Number.isInteger(columns) || columns < 1 || columns > 3) return json(res,400,{error:"تعداد ستون باید بین ۱ تا ۳ باشد."});
     if (!["off","subtle","expressive"].includes(emojiMode)) return json(res,400,{error:"حالت ایموجی معتبر نیست."});
     if (!title || !welcome) return json(res,400,{error:"عنوان و متن خوشامدگویی نمی‌توانند خالی باشند."});
     const result = await db.query(
-      `INSERT INTO bot_menu_appearance (bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+      `INSERT INTO bot_menu_appearance (bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,visitor_messages_enabled,updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
        ON CONFLICT (bot_id) DO UPDATE SET theme=EXCLUDED.theme,button_columns=EXCLUDED.button_columns,
          emoji_mode=EXCLUDED.emoji_mode,welcome_title=EXCLUDED.welcome_title,welcome_text=EXCLUDED.welcome_text,
-         banner_file_id=EXCLUDED.banner_file_id,updated_at=now()
-       RETURNING theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at`,
-      [bot.id,theme,columns,emojiMode,title,welcome,banner || null],
+         banner_file_id=EXCLUDED.banner_file_id,visitor_messages_enabled=EXCLUDED.visitor_messages_enabled,updated_at=now()
+       RETURNING theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,visitor_messages_enabled,updated_at`,
+      [bot.id,theme,columns,emojiMode,title,welcome,banner || null,visitorMessagesEnabled],
     );
     return json(res,200,{appearance:{...defaults,...result.rows[0]}});
   } catch (error) {
