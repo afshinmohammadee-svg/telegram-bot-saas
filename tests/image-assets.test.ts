@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectImage, isLegacyTelegramPhoto, MAX_IMAGE_BYTES, newImageKey, validateImage } from "../api/_lib/image-assets.js";
+import { detectImage, exceedsImageQuota, isLegacyTelegramPhoto, MAX_IMAGE_BYTES, newImageKey, validateImage } from "../api/_lib/image-assets.js";
 
 const jpeg = (size=16) => { const b=Buffer.alloc(size); b.set([0xff,0xd8,0xff]); return b; };
 const png = () => { const b=Buffer.alloc(16); b.set([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]); return b; };
@@ -27,4 +27,12 @@ test("generates bot-scoped random keys",()=>{
 test("recognizes legacy Telegram image payloads for quota accounting",()=>{
  assert.equal(isLegacyTelegramPhoto("tgphoto:image/jpeg:YWJj"),true);
  assert.equal(isLegacyTelegramPhoto("tgphoto:image/gif:YWJj"),false);
+});
+
+test("enforces five-image quota across stored and legacy images",()=>{
+ assert.equal(exceedsImageQuota(4,0,false),false);
+ assert.equal(exceedsImageQuota(4,1,false),true);
+ assert.equal(exceedsImageQuota(3,2,false),true);
+ assert.equal(exceedsImageQuota(5,0,true),false);
+ assert.equal(exceedsImageQuota(4,1,true),false);
 });
