@@ -30,7 +30,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!ownedMenu.rowCount) return json(res, 404, { error: "منو پیدا نشد." });
     }
     if (req.method === "DELETE") {
-      let client;\n  try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
+      let client;
+  try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
       let oldKey: string | null = null;
       try {
         await client.query("BEGIN");
