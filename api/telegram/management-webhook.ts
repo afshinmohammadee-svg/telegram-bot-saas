@@ -58,7 +58,7 @@ function isManagedImageKey(value: unknown, botId: string): value is string {
 async function persistManagedImage(botId: string, kind: "banner" | "menu", menuId: string | null, bytes: Buffer) {
   const detected = validateImage(bytes);
   const key = newImageKey(botId, detected.extension);
-  await putImage(key, bytes, detected.mimeType);
+  try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
   let client;
   try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
   let oldKey: string | null = null;
