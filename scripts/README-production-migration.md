@@ -7,7 +7,7 @@ This is a one-time local operations script. It is not called by the app and does
 - Run from this repository with Node.js installed.
 - Install dependencies with npm install if needed.
 - Have the Preview and Production Neon connection strings available from the Neon console.
-- Use the exact BOT_TOKEN_ENCRYPTION_KEY already configured on the Production Railway service. Do not generate or rotate this key.
+- Enter both the existing Preview and Production BOT_TOKEN_ENCRYPTION_KEY values. The script compares them in memory and aborts before any write if they differ. Do not generate or rotate either key.
 - Optionally provide the Production MANAGEMENT_BOT_TOKEN and MANAGEMENT_BOT_WEBHOOK_SECRET to move the management bot webhook too.
 
 ## Windows PowerShell
@@ -36,7 +36,8 @@ function Set-HiddenEnv([string]$Name, [bool]$Optional = $false) {
 }
 Set-HiddenEnv "PREVIEW_DATABASE_URL"
 Set-HiddenEnv "PRODUCTION_DATABASE_URL"
-Set-HiddenEnv "BOT_TOKEN_ENCRYPTION_KEY"
+Set-HiddenEnv "PREVIEW_BOT_TOKEN_ENCRYPTION_KEY"
+Set-HiddenEnv "PRODUCTION_BOT_TOKEN_ENCRYPTION_KEY"
 Set-HiddenEnv "MANAGEMENT_BOT_TOKEN" $true
 Set-HiddenEnv "MANAGEMENT_BOT_WEBHOOK_SECRET" $true
 $env:PRODUCTION_APP_URL = "https://telegram-bot-saas-app-ggr7-production.up.railway.app"
@@ -49,7 +50,7 @@ The two management-bot values must either both be provided or both be left blank
 
 1. Reads active bot rows and encrypted tokens from Preview.
 2. Decrypts tokens only in local process memory with the existing encryption key and calls Telegram getMe to validate identity. It never prints token material.
-3. Copies encrypted bot-token rows and Better Auth account rows into Production in a database transaction, without overwriting existing rows.
+3. Confirms the Preview and Production encryption keys match in constant time, then copies encrypted bot-token rows and Better Auth account rows into Production in a database transaction, without overwriting existing rows.
 4. Generates fresh per-bot webhook secrets, stores only their SHA-256 hashes in Production, and registers the customer-bot webhooks at the Production URL.
 5. If both management-bot values were provided, registers that webhook at the Production URL too.
 6. Prints only bot usernames and completion counts.
