@@ -19,7 +19,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     );
     if (license.rows[0]?.features_snapshot?.menuBuilder !== true)
       return json(res, 403, { error: "امکان مدیریت تصویر در لایسنس شما فعال نیست." });
-    if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+    if (req.method !== "POST" && req.method !== "DELETE") return json(res, 405, { error: "Method not allowed" });
 
     const body = bodyOf(req);
     const kind = body.kind === "banner" ? "banner" : body.kind === "menu" ? "menu" : null;
