@@ -85,7 +85,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         [bot.id],
       );
       const replacingExisting = typeof oldValue === "string" && (isObjectKey(oldValue) || isLegacyTelegramPhoto(oldValue));
-      const total = Number(quota.rows[0].stored_count) + Number(quota.rows[0].legacy_count);
       if (exceedsImageQuota(Number(quota.rows[0].stored_count), Number(quota.rows[0].legacy_count), replacingExisting)) throw new Error("سقف ۵ تصویر برای این ربات تکمیل شده است.");
 
       if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [bot.id, oldKey]);
