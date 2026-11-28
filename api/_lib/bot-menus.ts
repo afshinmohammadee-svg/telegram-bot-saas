@@ -49,6 +49,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!responseTypes.has(responseType)) return json(res, 400, { error: "نوع پاسخ معتبر نیست." });
       if (responseType === "url" && !/^https:\/\//i.test(targetUrl)) return json(res, 400, { error: "لینک باید با https شروع شود." });
       if (responseType !== "submenu" && responseType !== "url" && !responseContent) return json(res, 400, { error: "محتوای پاسخ الزامی است." });
+      if (responseType === "photo" && responseContent.startsWith("bots/")) {
+        const image = await db.query("SELECT 1 FROM bot_images WHERE bot_id=$1 AND object_key=$2 AND status='active' LIMIT 1", [bot.id, responseContent]);
+        if (!image.rowCount) return json(res, 400, { error: "تصویر متعلق به این ربات نیست." });
+      }
       if (parentId) {
         const parent = await db.query("SELECT id FROM bot_menus WHERE id=$1 AND bot_id=$2", [parentId, bot.id]);
         if (!parent.rowCount) return json(res, 400, { error: "منوی والد معتبر نیست." });
@@ -82,6 +86,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const responseContent = body.responseContent === undefined ? undefined : String(body.responseContent).trim().slice(0,4000);
       const targetUrl = body.targetUrl === undefined ? undefined : String(body.targetUrl).trim();
       if (responseType && !responseTypes.has(responseType)) return json(res, 400, { error: "نوع پاسخ معتبر نیست." });
+      if (responseType === "photo" && responseContent?.startsWith("bots/")) {
+        const image = await db.query("SELECT 1 FROM bot_images WHERE bot_id=$1 AND object_key=$2 AND status='active' LIMIT 1", [bot.id, responseContent]);
+        if (!image.rowCount) return json(res, 400, { error: "تصویر متعلق به این ربات نیست." });
+      }
       if (responseType === "url" && targetUrl !== undefined && !/^https:\/\//i.test(targetUrl)) return json(res, 400, { error: "لینک باید با https شروع شود." });
       if (parentId) {
         if (parentId === id) return json(res, 400, { error: "یک منو نمی‌تواند والد خودش باشد." });
