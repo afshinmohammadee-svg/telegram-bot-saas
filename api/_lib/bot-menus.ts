@@ -1,5 +1,6 @@
 import type { ApiRequest, ApiResponse } from "./server.js";
 import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
+import { deleteImage } from "./object-storage.js";
 
 const responseTypes = new Set(["text", "photo", "document", "url", "submenu"]);
 
@@ -121,7 +122,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (req.method === "DELETE") {
+      const assets = await db.query(
+        `WITH RECURSIVE menu_tree AS (
+           SELECT id FROM bot_menus WHERE id=$1 AND bot_id=$2
+           UNION ALL
+           SELECT child.id FROM bot_menus child JOIN menu_tree parent ON child.parent_id=parent.id
+            WHERE child.bot_id=$2
+         )
+         SELECT object_key FROM bot_images
+          WHERE bot_id=$2 AND menu_id IN (SELECT id FROM menu_tree)` ,
+        [id,bot.id],
+      );
       await db.query("DELETE FROM bot_menus WHERE id=$1 AND bot_id=$2", [id,bot.id]);
+      await Promise.all(assets.rows.map((row: {object_key:string}) => deleteImage(row.object_key).catch(() => undefined)));
       return json(res, 200, { success: true });
     }
     return json(res, 405, { error: "Method not allowed" });
