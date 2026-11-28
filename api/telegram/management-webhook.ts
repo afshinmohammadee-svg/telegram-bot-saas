@@ -1,8 +1,8 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
-import { db, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
+import { db, decryptToken, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
-type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
+type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
 type TgUpdate = { update_id: number; message?: TgMessage };
 
 const adminKeyboard = {
@@ -126,7 +126,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
              RETURNING user_id`,
             [challenge.rows[0].user_id, telegramId, from.username ?? null],
           );
-          if (!account.rowCount) {
+          if (message.reply_to_message?.message_id && account.rowCount) {
+      const mapping = await db.query(
+        `SELECT f.bot_id,f.owner_user_id,f.visitor_chat_id,f.conversation_id,b.display_name,s.encrypted_token
+           FROM visitor_message_forward_map f
+           JOIN bots b ON b.id=f.bot_id AND b.owner_id=f.owner_user_id AND b.status='active'
+           JOIN bot_secrets s ON s.bot_id=b.id
+          WHERE f.management_message_id=$1 AND f.management_chat_id=$2 AND f.owner_user_id=$3
+          LIMIT 1`,
+        [message.reply_to_message.message_id,chatId,account.rows[0].id],
+      );
+      if (mapping.rowCount) {
+        const replyText = (message.text ?? message.caption ?? "").trim().slice(0,4096);
+        if (!replyText) {
+          await send(token,chatId,"برای پاسخ به بازدیدکننده، لطفاً متن پیام را ارسال کن.");
+          return json(res,200,{ok:true});
+        }
+        const customerToken = decryptToken(mapping.rows[0].encrypted_token);
+        const delivered = await telegram<{message_id:number}>(customerToken,"sendMessage",{chat_id:mapping.rows[0].visitor_chat_id,text:replyText});
+        await db.query(
+          "INSERT INTO messages(conversation_id,telegram_message_id,direction,sender_type,text_body,delivery_status,sent_at) VALUES($1,$2,'outbound','owner',$3,'sent',now())",
+          [mapping.rows[0].conversation_id,delivered.message_id,replyText],
+        );
+        await send(token,chatId,"✅ پاسخ از طریق ربات «"+String(mapping.rows[0].display_name||"مشتری") + "» برای بازدیدکننده ارسال شد.",customerKeyboard);
+        return json(res,200,{ok:true,replied:true});
+      }
+    }
+
+    if (!account.rowCount) {
             identityConflict = true;
             await client.query("ROLLBACK");
           } else {
