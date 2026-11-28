@@ -28,8 +28,8 @@ async function main() {
   const body = Buffer.from("neon-object-storage-smoke");
   let objectMayExist = false;
   try {
-    await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: "text/plain" }));
     objectMayExist = true;
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: "text/plain" }));
     const got = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     const actual = Buffer.from(await got.Body!.transformToByteArray());
     if (!actual.equals(body)) throw new Error("Storage read-back did not match uploaded bytes");
