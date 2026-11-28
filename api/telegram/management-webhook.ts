@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, decryptToken, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 import { deleteImage, putImage } from "../_lib/object-storage.js";
@@ -59,7 +60,7 @@ async function persistManagedImage(botId: string, kind: "banner" | "menu", menuI
   const detected = validateImage(bytes);
   const key = newImageKey(botId, detected.extension);
   try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
-  let client;
+  let client: PoolClient;
   try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
   let oldKey: string | null = null;
   try {
