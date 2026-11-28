@@ -16,7 +16,7 @@ type Rule = { id: string; trigger_text: string; reply_text: string; match_type: 
 type AdminUser = { id: string; name: string; email: string; role: string; expires_at: string | null; subscription_active: boolean }
 type LicensePlan = { id: string; code: string; name: string; description: string | null; duration_days: number; max_bots: number; max_menus: number; max_visitors: number | null; features: Record<string, boolean>; is_active: boolean; issued_count: number }
 type LicenseItem = { id: string; user_id: string; plan_id: string; status: string; starts_at: string; expires_at: string; user_name: string | null; user_email: string | null; plan_name: string; plan_code: string }
-type MenuAppearance = { theme: 'luxury_modern' | 'minimal' | 'vibrant'; button_columns: number; emoji_mode: 'off' | 'subtle' | 'expressive'; welcome_title: string; welcome_text: string; banner_file_id: string }
+type MenuAppearance = { theme: 'luxury_modern' | 'minimal' | 'vibrant'; button_columns: number; emoji_mode: 'off' | 'subtle' | 'expressive'; welcome_title: string; welcome_text: string; banner_file_id: string; visitor_messages_enabled: boolean }
 type BotMenu = { id: string; title: string; description: string | null; parent_id: string | null; response_type: 'text' | 'photo' | 'document' | 'url' | 'submenu'; response_content: string | null; target_url: string | null; sort_order: number; is_active: boolean }
 type Page = 'نمای کلی' | 'گفتگوها' | 'بازدیدکنندگان' | 'پاسخ‌های خودکار' | 'مدیریت ربات' | 'مدیریت کاربران' | 'مدیریت پلن‌ها' | 'مدیریت لایسنس' | 'ربات مرکزی' | 'منوساز' | 'اشتراک و اعتبار' | 'تنظیمات'
 type NavItem = { label: Page; icon: typeof LayoutDashboard }
@@ -93,7 +93,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
   const [planDraft, setPlanDraft] = useState({ code: '', name: '', description: '', durationDays: '30', maxBots: '1', maxMenus: '20', maxVisitors: '', features: { conversations: true, autoReplies: true, menuBuilder: true } })
   const [licenseDraft, setLicenseDraft] = useState({ userId: '', planId: '', notes: '' })
   const [menus, setMenus] = useState<BotMenu[]>([])
-  const [menuAppearance, setMenuAppearance] = useState<MenuAppearance>({ theme:'luxury_modern', button_columns:1, emoji_mode:'subtle', welcome_title:'به فضای اختصاصی ما خوش آمدید', welcome_text:'برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.', banner_file_id:'' })
+  const [menuAppearance, setMenuAppearance] = useState<MenuAppearance>({ theme:'luxury_modern', button_columns:1, emoji_mode:'subtle', welcome_title:'به فضای اختصاصی ما خوش آمدید', welcome_text:'برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.', banner_file_id:'', visitor_messages_enabled:true })
   const [menuDraft, setMenuDraft] = useState({ id: '', title: '', description: '', parentId: '', responseType: 'text' as BotMenu['response_type'], responseContent: '', targetUrl: '' })
 
   const refreshDashboard = useCallback(async () => {
@@ -465,6 +465,11 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
                 </select></label>
                 <label>عنوان خوشامدگویی<input value={menuAppearance.welcome_title} onChange={e=>setMenuAppearance(v=>({...v,welcome_title:e.target.value}))} maxLength={120} required/></label>
                 <label className="wide-field">متن خوشامدگویی<textarea rows={3} maxLength={700} value={menuAppearance.welcome_text} onChange={e=>setMenuAppearance(v=>({...v,welcome_text:e.target.value}))} required/></label>
+                <label className="wide-field" style={{display:'flex',alignItems:'center',gap:10}}>
+                  <input type="checkbox" checked={menuAppearance.visitor_messages_enabled} onChange={e=>setMenuAppearance(v=>({...v,visitor_messages_enabled:e.target.checked}))}/>
+                  دریافت پیام بازدیدکنندگان در ربات مرکزی (پیش‌فرض فعال)
+                </label>
+                <p className="wide-field" style={{fontSize:12,color:'var(--muted)',marginTop:-8}}>با فعال‌بودن این گزینه، پیام‌های متنی و اعلان رسانه‌های بازدیدکنندگان به حساب تلگرام متصل‌شده شما ارسال می‌شود. برای پاسخ، روی اعلان در ربات مرکزی Reply بزنید.</p>
                 <label className="wide-field">شناسه فایل بنر تلگرام (اختیاری)<input value={menuAppearance.banner_file_id} onChange={e=>setMenuAppearance(v=>({...v,banner_file_id:e.target.value}))} maxLength={500} placeholder="file_id عکس؛ یا از ربات مرکزی ← مدیریت منو ← تنظیم بنر عکس بفرست"/></label>
                 <div className="wide-field" style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
                   <button className="primary-btn" disabled={busy}><ShieldCheck size={16}/> ذخیره ظاهر منو</button>
