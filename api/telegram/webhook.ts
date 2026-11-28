@@ -2,7 +2,7 @@ import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, decryptToken, json, safeEqualHex, sha256, subscriptionActive, telegram } from "../_lib/server.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string };
-type TgMessage = { message_id: number; date: number; chat: { id: number; type: string }; from?: TgUser; text?: string };
+type TgMessage = { message_id: number; date: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; photo?: unknown[]; document?: unknown; video?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown };
 type TgCallback = { id: string; data?: string; from: TgUser; message?: TgMessage };
 type TgUpdate = { update_id: number; message?: TgMessage; edited_message?: TgMessage; callback_query?: TgCallback };
 
@@ -223,6 +223,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           "INSERT INTO messages (conversation_id,telegram_message_id,direction,sender_type,text_body,delivery_status,sent_at) VALUES ($1,$2,'outbound','system',$3,'sent',now())",
           [conversationId, sent.message_id, match.reply_text],
         );
+      }
+    }
+    const visitorContent = (message.text ?? message.caption ?? "").trim().slice(0, 3500);
+    const mediaKind = message.photo ? "عکس" : message.document ? "فایل" : message.video ? "ویدئو" : message.voice ? "پیام صوتی" : message.audio ? "صوت" : message.sticker ? "استیکر" : "";
+    if (process.env.MANAGEMENT_BOT_TOKEN && (visitorContent || mediaKind)) {
+      const appearance = await db.query("SELECT visitor_messages_enabled FROM bot_menu_appearance WHERE bot_id=$1", [bot.id]);
+      const enabled = appearance.rows[0]?.visitor_messages_enabled !== false;
+      if (enabled) {
+        const ownerTelegram = await db.query("SELECT telegram_user_id FROM customer_telegram_accounts WHERE user_id=$1 LIMIT 1", [bot.owner_id]);
+        if (ownerTelegram.rowCount) {
+          const visitorName = [sender.first_name, sender.last_name].filter(Boolean).join(" ") || "بازدیدکننده";
+          const visitorHandle = sender.username ? "@"+sender.username : "بدون نام کاربری";
+          const notification = "📩 پیام جدید بازدیدکننده\nربات: "+String(bot.display_name || "ربات مشتری")+"\nبازدیدکننده: "+visitorName+" ("+visitorHandle+")\nشناسه: "+String(sender.id)+"\n\n"+(visitorContent || "پیام رسانه‌ای: "+mediaKind)+"\n\nبرای پاسخ، روی همین پیام Reply بزن.";
+          const sent = await telegram<{message_id:number}>(process.env.MANAGEMENT_BOT_TOKEN,"sendMessage",{chat_id:ownerTelegram.rows[0].telegram_user_id,text:notification,disable_web_page_preview:true});
+          await db.query("INSERT INTO visitor_message_forward_map(management_message_id,management_chat_id,bot_id,owner_user_id,visitor_chat_id,conversation_id,visitor_telegram_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (management_message_id) DO NOTHING",[sent.message_id,ownerTelegram.rows[0].telegram_user_id,bot.id,bot.owner_id,message.chat.id,conversationId,sender.id]);
+        }
       }
     }
     return json(res, 200, { ok: true, stored: true });
