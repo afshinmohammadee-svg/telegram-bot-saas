@@ -62,7 +62,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!encoded || encoded.length > 420_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
       return json(res, 400, { error: "داده تصویر معتبر نیست یا بیش از حد بزرگ است." });
     const bytes = Buffer.from(encoded, "base64");
-    const detected = validateImage(bytes);
+    let detected;
+    try { detected = validateImage(bytes); }
+    catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : "فرمت یا حجم تصویر معتبر نیست." }); }
     const key = newImageKey(bot.id, detected.extension);
     try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
 
