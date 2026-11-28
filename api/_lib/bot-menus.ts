@@ -125,7 +125,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const assets = await db.query(
         `WITH RECURSIVE menu_tree AS (
            SELECT id FROM bot_menus WHERE id=$1 AND bot_id=$2
-           UNION ALL
+           UNION
            SELECT child.id FROM bot_menus child JOIN menu_tree parent ON child.parent_id=parent.id
             WHERE child.bot_id=$2
          )
