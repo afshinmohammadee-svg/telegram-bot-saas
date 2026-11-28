@@ -425,11 +425,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (menuSession.step === "add_content") {
-        const photoPayload = menuSession.draft?.responseType === "photo" ? await getPhotoPayload() : null;
-        if (menuSession.draft?.responseType === "photo" && !photoPayload) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(menuSession.draft?.responseType === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
-        if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
-        await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
+        const type = menuSession.draft?.responseType;
+        if (type === "photo") {
+          const photoBytes = await getPhotoBytes();
+          if (!photoBytes) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          const inserted = await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,'photo',NULL,NULL,false) RETURNING id", [botId,draft.title,"",mediaCaption||null,draft.parentId??null]);
+          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes); }
+          catch (error) {
+            await db.query("DELETE FROM bot_menus WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]);
+            if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+              await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است. ابتدا یکی از تصاویر قبلی را حذف کنید.",homeKeyboard);
+              return json(res,200,{ok:true});
+            }
+            throw error;
+          }
+        } else {
+          const value=rawInput.trim().slice(0,15000000);
+          if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
+          await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,null,draft.parentId??null,type,type==="url"?null:value,type==="url"?value:null]);
+        }
         await saveSession("home",{},botId);
         await send(token,chatId,"✅ گزینه منو با موفقیت ثبت شد.",homeKeyboard);
         return json(res,200,{ok:true});
