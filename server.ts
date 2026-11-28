@@ -91,7 +91,7 @@ async function serveApi(req: ApiRequest, res: ApiResponse, url: URL) {
   } else if (path === "/api/bot-menus") {
     query.resource = "menus";
     handler = (await import("./api/bots/index.js")).default;
-  } else if (path === "/api/bot-menu-appearance") {
+  } else if (path === "/api/image-upload") {\n    handler = (await import("./api/_lib/image-upload.js")).default;\n  } else if (path === "/api/bot-menu-appearance") {
     query.resource = "menu-appearance";
     handler = (await import("./api/bots/index.js")).default;
   } else if (path === "/api/conversations" || /^\/api\/conversations\/[^/]+\/messages$/.test(path)) {
