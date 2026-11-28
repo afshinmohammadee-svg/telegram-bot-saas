@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { authClient } from "./lib/auth-client";
-import { Bot, LogIn, LogOut, ShieldCheck } from "lucide-react";
+import { Bot, LogIn, LogOut, ShieldCheck, UserPlus } from "lucide-react";
 import App from "./App";
 
 type AuthUser = {
