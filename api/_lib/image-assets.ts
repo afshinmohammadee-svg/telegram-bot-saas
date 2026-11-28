@@ -3,6 +3,10 @@ import { randomUUID, createHash } from "node:crypto";
 export const MAX_IMAGE_BYTES = 300 * 1024;
 export const MAX_IMAGES_PER_BOT = 5;
 
+export function exceedsImageQuota(storedCount: number, legacyCount: number, replacingExisting: boolean): boolean {
+  return !replacingExisting && storedCount + legacyCount >= MAX_IMAGES_PER_BOT;
+}
+
 export type SupportedImage = { mimeType: "image/jpeg" | "image/png" | "image/webp"; extension: "jpg" | "png" | "webp" };
 
 export function detectImage(bytes: Buffer): SupportedImage {
