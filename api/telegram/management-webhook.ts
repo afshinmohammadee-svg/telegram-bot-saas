@@ -291,7 +291,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const rawInput = (message.text ?? "").trim();
     const photoSizes = message.photo ?? [];
     const photoFileId = [...photoSizes].reverse().find((photo) => photo.file_size !== undefined && photo.file_size <= 300 * 1024)?.file_id ?? photoSizes[0]?.file_id ?? null;
-    const getPhotoBytes = async () => photoFileId ? downloadPhotoFromManagementBot(token, photoFileId) : null;
+    const getPhotoBytes = async () => {
+      if (!photoFileId) return null;
+      try { return await downloadPhotoFromManagementBot(token, photoFileId); }
+      catch (error) {
+        console.warn("management_photo_validation_failed", error instanceof Error ? error.name : "unknown");
+        return null;
+      }
+    };
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
     const menuLicense = await db.query(
@@ -413,7 +420,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
       if (menuSession.step === "banner_wait") {
         const photoBytes = await getPhotoBytes();
-        if (!photoBytes) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
+        if (!photoBytes) { await send(token,chatId,"لطفاً تصویر JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را به‌صورت Photo ارسال کن."); return json(res,200,{ok:true}); }
         try { await persistManagedImage(botId,"banner",null,photoBytes); }
         catch (error) {
           if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
@@ -430,7 +437,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const type = menuSession.draft?.responseType;
         if (type === "photo") {
           const photoBytes = await getPhotoBytes();
-          if (!photoBytes) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          if (!photoBytes) { await send(token,chatId,"لطفاً تصویر JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را ارسال کن؛ توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
           const inserted = await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,'photo',NULL,NULL,false) RETURNING id", [botId,draft.title,"",mediaCaption||null,draft.parentId??null]);
           try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes,true); }
           catch (error) {
@@ -473,7 +480,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const type=current.rows[0]?.response_type;
         if (type === "photo") {
           const photoBytes = await getPhotoBytes();
-          if (!photoBytes) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          if (!photoBytes) { await send(token,chatId,"لطفاً تصویر جدید JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
           try { await persistManagedImage(botId,"menu",draft.menuId,photoBytes); }
           catch (error) {
             if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
