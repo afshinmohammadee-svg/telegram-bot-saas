@@ -469,11 +469,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (menuSession.step === "edit_content") {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
-        const photoPayload = type === "photo" ? await getPhotoPayload() : null;
-        if (type === "photo" && !photoPayload) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(type === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
-        if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
-        await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,description=CASE WHEN $3='photo' THEN $5 ELSE description END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value,mediaCaption||null]);
+        if (type === "photo") {
+          const photoBytes = await getPhotoBytes();
+          if (!photoBytes) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          try { await persistManagedImage(botId,"menu",draft.menuId,photoBytes); }
+          catch (error) {
+            if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+              await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است.",homeKeyboard);
+              return json(res,200,{ok:true});
+            }
+            throw error;
+          }
+          await db.query("UPDATE bot_menus SET description=$3,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,mediaCaption||null]);
+        } else {
+          const value=rawInput.trim().slice(0,15000000);
+          if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
+          await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value]);
+        }
         await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
       }
       await send(token,chatId,"از گزینه‌های مدیریت منو استفاده کنید.",homeKeyboard);
