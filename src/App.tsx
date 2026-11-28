@@ -438,7 +438,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
 
           {!loading && active === 'پاسخ‌های خودکار' && <section className="page-panel"><div className="panel rule-form-panel"><div className="panel-heading"><div><h2>افزودن پاسخ خودکار</h2><p>با تطبیق متن پیام کاربر، پاسخ تعیین‌شده ارسال می‌شود.</p></div><Zap className="muted-icon"/></div><form className="rule-form" onSubmit={addRule}><label>عبارت محرک<input id="new-rule-trigger" value={trigger} onChange={e => setTrigger(e.target.value)} placeholder="مثلاً قیمت" maxLength={200} required/></label><label>نوع تطبیق<select value={matchType} onChange={e => setMatchType(e.target.value)}><option value="contains">شامل عبارت باشد</option><option value="exact">دقیقاً برابر باشد</option><option value="starts_with">با عبارت شروع شود</option></select></label><label className="wide-field">متن پاسخ<textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="متن پاسخی که ربات ارسال می‌کند..." maxLength={4000} rows={3} required/></label><button className="primary-btn" disabled={busy || !trigger.trim() || !replyText.trim()}><Plus size={16}/> ثبت پاسخ</button></form></div><div className="panel rules-list"><div className="panel-heading"><div><h2>قوانین ثبت‌شده</h2><p>{rules.length.toLocaleString('fa-IR')} پاسخ خودکار</p></div></div>{rules.length ? rules.map(rule => <div className="rule-row" key={rule.id}><div className="rule-copy"><b>{rule.trigger_text}</b><p>{rule.reply_text}</p><small>{rule.match_type === 'exact' ? 'تطبیق دقیق' : rule.match_type === 'starts_with' ? 'شروع با عبارت' : 'شامل عبارت'}</small></div><label className="switch-label"><input type="checkbox" checked={rule.is_enabled} onChange={() => toggleRule(rule)}/><span>{rule.is_enabled ? 'فعال' : 'غیرفعال'}</span></label><button className="icon-btn delete-btn" aria-label="حذف قانون" onClick={() => deleteRule(rule.id)}><Trash2 size={16}/></button></div>) : <div className="empty-inline">هنوز پاسخی تعریف نشده است.</div>}</div></section>}
 
-          {!loading && active === 'منوساز' && <section className="page-panel">
+          {!loading && active === 'منوساز' && <section className="page-panel menu-builder">
             <div className="panel rule-form-panel">
               <div className="panel-heading"><div><h2>{menuDraft.id ? 'ویرایش منو' : 'ساخت منو یا زیرمنو'}</h2><p>برای هر دکمه عنوان و نوع محتوای پاسخ را مشخص کن.</p></div><Bot className="muted-icon"/></div>
               <form className="rule-form" onSubmit={saveMenu}>
@@ -479,9 +479,15 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
             </div>
             <div className="panel page-panel">
               <div className="panel-heading"><div><h2>منوهای ساخته‌شده</h2><p>{menus.length.toLocaleString('fa-IR')} منو و زیرمنو</p></div></div>
-              <div className="table-wrap"><table className="data-table"><thead><tr><th>عنوان</th><th>والد</th><th>عملکرد</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
+              <div className="table-wrap menu-table-desktop"><table className="data-table"><thead><tr><th>عنوان</th><th>والد</th><th>عملکرد</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
                 {menus.map(m=><tr key={m.id}><td>{m.parent_id?'↳ ':''}{m.title}</td><td>{menus.find(p=>p.id===m.parent_id)?.title || 'منوی اصلی'}</td><td>{({text:'متن',photo:'عکس',document:'فایل',url:'لینک',submenu:'زیرمنو'} as Record<string,string>)[m.response_type]}</td><td>{m.is_active?'فعال':'غیرفعال'}</td><td><button className="outline-btn" onClick={()=>setMenuDraft({id:m.id,title:m.title,description:m.description||'',parentId:m.parent_id||'',responseType:m.response_type,responseContent:m.response_content||'',targetUrl:m.target_url||''})}>ویرایش</button> <button className="danger-btn" disabled={busy} onClick={()=>removeMenu(m)}>حذف</button></td></tr>)}
-              </tbody></table>{!menus.length?<div className="empty-inline">هنوز منویی نساخته‌ای. از فرم بالا اولین منو را ایجاد کن.</div>:null}</div>
+              </tbody></table></div>
+              <div className="menu-cards-mobile">{menus.map(m=><article className="menu-mobile-card" key={m.id}>
+                <div className="menu-mobile-card-head"><b>{m.parent_id?'↳ ':''}{m.title}</b><span className={m.is_active?'status-pill good':'status-pill'}>{m.is_active?'فعال':'غیرفعال'}</span></div>
+                <div className="menu-mobile-meta"><span>والد: {menus.find(p=>p.id===m.parent_id)?.title || 'منوی اصلی'}</span><span>نوع: {({text:'متن',photo:'عکس',document:'فایل',url:'لینک',submenu:'زیرمنو'} as Record<string,string>)[m.response_type]}</span></div>
+                <div className="menu-mobile-actions"><button className="outline-btn" onClick={()=>setMenuDraft({id:m.id,title:m.title,description:m.description||'',parentId:m.parent_id||'',responseType:m.response_type,responseContent:m.response_content||'',targetUrl:m.target_url||''})}>ویرایش</button><button className="danger-btn" disabled={busy} onClick={()=>removeMenu(m)}>حذف</button></div>
+              </article>)}</div>
+              {!menus.length?<div className="empty-inline">هنوز منویی نساخته‌ای. از فرم بالا اولین منو را ایجاد کن.</div>:null}
             </div>
           </section>}
 
