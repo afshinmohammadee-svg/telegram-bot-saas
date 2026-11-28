@@ -1,7 +1,7 @@
 import type { ApiRequest, ApiResponse } from "./server.js";
 import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
 import { deleteImage, putImage } from "./object-storage.js";
-import { imageSha256, isLegacyTelegramPhoto, MAX_IMAGES_PER_BOT, newImageKey, validateImage } from "./image-assets.js";
+import { exceedsImageQuota, imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "./image-assets.js";
 
 function isObjectKey(value: unknown): value is string {
   return typeof value === "string" && /^bots\/[0-9a-f-]{36}\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(value);
@@ -86,7 +86,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       );
       const replacingExisting = typeof oldValue === "string" && (isObjectKey(oldValue) || isLegacyTelegramPhoto(oldValue));
       const total = Number(quota.rows[0].stored_count) + Number(quota.rows[0].legacy_count);
-      if (!replacingExisting && total >= MAX_IMAGES_PER_BOT) throw new Error("سقف ۵ تصویر برای این ربات تکمیل شده است.");
+      if (exceedsImageQuota(Number(quota.rows[0].stored_count), Number(quota.rows[0].legacy_count), replacingExisting)) throw new Error("سقف ۵ تصویر برای این ربات تکمیل شده است.");
 
       if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [bot.id, oldKey]);
       await client.query(
