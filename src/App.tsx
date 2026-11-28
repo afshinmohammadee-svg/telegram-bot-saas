@@ -328,6 +328,41 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
     } finally { setBusy(false) }
   }
 
+  async function uploadMenuImage(file: File, kind: 'banner' | 'menu', menuId?: string) {
+    if (file.size > 300 * 1024) { setError('حجم تصویر نباید بیشتر از ۳۰۰ کیلوبایت باشد.'); return }
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+      const result = await api<{ imageKey: string }>('/api/image-upload', { method: 'POST', body: JSON.stringify({ kind, menuId, imageBase64: btoa(binary) }) })
+      if (kind === 'banner') setMenuAppearance(current => ({ ...current, banner_file_id: result.imageKey }))
+      else {
+        setMenuDraft(current => ({ ...current, responseType: 'photo', responseContent: result.imageKey }))
+        const data = await api<{ menus: BotMenu[] }>('/api/bot-menus')
+        setMenus(data.menus)
+      }
+      setNotice('تصویر با موفقیت در فضای ذخیره‌سازی خصوصی ثبت شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'بارگذاری تصویر ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
+  async function deleteMenuImage(kind: 'banner' | 'menu', menuId?: string) {
+    if (!window.confirm('تصویر حذف شود؟')) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api('/api/image-upload', { method: 'DELETE', body: JSON.stringify({ kind, menuId }) })
+      if (kind === 'banner') setMenuAppearance(current => ({ ...current, banner_file_id: '' }))
+      else {
+        setMenuDraft(current => ({ ...current, responseType: 'text', responseContent: '' }))
+        const data = await api<{ menus: BotMenu[] }>('/api/bot-menus')
+        setMenus(data.menus)
+      }
+      setNotice('تصویر حذف شد.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'حذف تصویر ناموفق بود.') }
+    finally { setBusy(false) }
+  }
+
   async function saveMenuAppearance(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
     try {
@@ -467,7 +502,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
                 <label>منوی والد<select value={menuDraft.parentId} onChange={e=>setMenuDraft(v=>({...v,parentId:e.target.value}))}><option value="">منوی اصلی (بدون والد)</option>{menus.filter(m=>m.id!==menuDraft.id).map(m=><option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
                 <label>نوع عملکرد دکمه<select value={menuDraft.responseType} onChange={e=>setMenuDraft(v=>({...v,responseType:e.target.value as BotMenu['response_type']}))}><option value="text">ارسال متن</option><option value="photo">ارسال عکس (با آدرس فایل تلگرام)</option><option value="document">ارسال فایل (با آدرس فایل تلگرام)</option><option value="url">بازکردن لینک</option><option value="submenu">نمایش زیرمنو</option></select></label>
                 {menuDraft.responseType==='url' ? <label>آدرس لینک امن<input type="url" value={menuDraft.targetUrl} onChange={e=>setMenuDraft(v=>({...v,targetUrl:e.target.value}))} placeholder="https://example.com" required/></label> : null}
-                {menuDraft.responseType!=='submenu' && menuDraft.responseType!=='url' ? <label className="wide-field">{menuDraft.responseType==='text'?'متن پاسخ':menuDraft.responseType==='photo'?'شناسه file_id عکس (کپشن در توضیحات)':'آدرس file_id یا URL فایل'}<textarea rows={3} maxLength={4000} value={menuDraft.responseContent} onChange={e=>setMenuDraft(v=>({...v,responseContent:e.target.value}))} required placeholder="محتوای ارسالی به کاربر تلگرام"/></label> : null}
+                {menuDraft.responseType!=='submenu' && menuDraft.responseType!=='url' ? {menuDraft.responseType==='photo' ? <div className="wide-field"><label>تصویر گزینه منو (JPEG، PNG یا WebP؛ حداکثر ۳۰۰ کیلوبایت)<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || !menuDraft.id} onChange={e=>{const file=e.target.files?.[0];if(file && menuDraft.id)void uploadMenuImage(file,'menu',menuDraft.id);e.currentTarget.value=''}}/></label>{!menuDraft.id && <small>ابتدا منو را ذخیره کن؛ سپس آن را ویرایش و تصویر را بارگذاری کن.</small>}{menuDraft.responseContent.startsWith('bots/') && <button type="button" className="danger-btn" disabled={busy || !menuDraft.id} onClick={()=>void deleteMenuImage('menu',menuDraft.id)}>حذف تصویر این گزینه</button>}</div> : <label className="wide-field">{menuDraft.responseType==='text'?'متن پاسخ':'آدرس file_id یا URL فایل'}<textarea rows={3} maxLength={4000} value={menuDraft.responseContent} onChange={e=>setMenuDraft(v=>({...v,responseContent:e.target.value}))} required placeholder="محتوای ارسالی به کاربر تلگرام"/></label>} : null}
                 <label className="wide-field">توضیحات اختیاری<input value={menuDraft.description} onChange={e=>setMenuDraft(v=>({...v,description:e.target.value}))} maxLength={1000} placeholder={menuDraft.responseType==='photo'?'متن زیر عکس برای کاربر (کپشن)':'توضیح برای مدیریت داخلی'}/></label>
                 <div className="wide-field" style={{display:'flex',gap:10,flexWrap:'wrap'}}><button className="primary-btn" disabled={busy}>{menuDraft.id?'ذخیره تغییرات':'ایجاد منو'}</button>{menuDraft.id?<button type="button" className="outline-btn" onClick={()=>setMenuDraft({id:'',title:'',description:'',parentId:'',responseType:'text',responseContent:'',targetUrl:''})}>انصراف از ویرایش</button>:null}</div>
               </form>
@@ -486,7 +521,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
                 </select></label>
                 <label>عنوان خوشامدگویی<input value={menuAppearance.welcome_title} onChange={e=>setMenuAppearance(v=>({...v,welcome_title:e.target.value}))} maxLength={120} required/></label>
                 <label className="wide-field">متن خوشامدگویی<textarea rows={3} maxLength={700} value={menuAppearance.welcome_text} onChange={e=>setMenuAppearance(v=>({...v,welcome_text:e.target.value}))} required/></label>
-                <label className="wide-field">شناسه فایل بنر تلگرام (اختیاری)<input value={menuAppearance.banner_file_id} onChange={e=>setMenuAppearance(v=>({...v,banner_file_id:e.target.value}))} maxLength={500} placeholder="file_id عکس؛ یا از ربات مرکزی ← مدیریت منو ← تنظیم بنر عکس بفرست"/></label>
+                <div className="wide-field"><label>تصویر بنر (JPEG، PNG یا WebP؛ حداکثر ۳۰۰ کیلوبایت)<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={e=>{const file=e.target.files?.[0];if(file)void uploadMenuImage(file,'banner');e.currentTarget.value=''}}/></label>{menuAppearance.banner_file_id && <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><small>تصویر بنر ثبت شده است.</small><button type="button" className="danger-btn" disabled={busy} onClick={()=>void deleteMenuImage('banner')}>حذف تصویر بنر</button></div>}</div>
                 <div className="wide-field" style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
                   <button className="primary-btn" disabled={busy}><ShieldCheck size={16}/> ذخیره ظاهر منو</button>
                   <span style={{fontSize:11,color:'var(--muted)'}}>پیش‌نمایش تلگرام: {menuAppearance.button_columns} ستون · {menuAppearance.emoji_mode==='off'?'بدون ایموجی':menuAppearance.emoji_mode==='subtle'?'ایموجی ظریف':'ایموجی متنوع'}</span>
