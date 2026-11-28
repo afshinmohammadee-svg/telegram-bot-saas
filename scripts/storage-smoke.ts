@@ -34,7 +34,6 @@ async function main() {
     const actual = Buffer.from(await got.Body!.transformToByteArray());
     if (!actual.equals(body)) throw new Error("Storage read-back did not match uploaded bytes");
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-    objectMayExist = false;
     let missing = false;
     try {
       await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
@@ -44,6 +43,7 @@ async function main() {
       missing = name === "NoSuchKey" || status === 404;
     }
     if (!missing) throw new Error("Deleted object remained readable");
+    objectMayExist = false;
     console.log("Storage smoke test passed: Preview Put/Get/Delete verified.");
   } finally {
     if (objectMayExist) {
