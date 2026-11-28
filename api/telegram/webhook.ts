@@ -205,33 +205,33 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       await showMenu(token,bot.id,message.chat.id,targetMenuId,visitorId);
       return json(res, 200, { ok: true, stored: true });
     }
-    if (text && !text.startsWith("/")) {
-      const state=await db.query("SELECT current_parent_id,awaiting_manager_message FROM bot_visitor_menu_state WHERE visitor_id=$1 AND bot_id=$2 LIMIT 1",[visitorId,bot.id]);
-      const currentParent=state.rows[0]?.current_parent_id??null;
-      const awaitingManagerMessage=state.rows[0]?.awaiting_manager_message===true;
-      const appearance=await getMenuAppearance(bot.id);
-      if(text==="💬 ارسال پیام به مدیر"){
-        if(!appearance.visitor_messages_enabled){await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"در حال حاضر امکان ارسال پیام به مدیر فعال نیست."});return json(res,200,{ok:true,disabled:true});}
-        await db.query("INSERT INTO bot_visitor_menu_state(visitor_id,bot_id,current_parent_id,awaiting_manager_message,updated_at) VALUES($1,$2,$3,true,now()) ON CONFLICT(visitor_id) DO UPDATE SET bot_id=EXCLUDED.bot_id,current_parent_id=EXCLUDED.current_parent_id,awaiting_manager_message=true,updated_at=now()",[visitorId,bot.id,currentParent]);
-        await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"پیام خود را برای مدیر بنویسید یا رسانهٔ موردنظر را ارسال کنید. برای انصراف، دکمهٔ لغو را بزنید.",reply_markup:{keyboard:[[{text:"لغو ارسال پیام"}]],resize_keyboard:true,is_persistent:true}});
-        return json(res,200,{ok:true,awaitingManagerMessage:true});
-      }
-      if(text==="لغو ارسال پیام"&&awaitingManagerMessage){
+    const state=await db.query("SELECT current_parent_id,awaiting_manager_message FROM bot_visitor_menu_state WHERE visitor_id=$1 AND bot_id=$2 LIMIT 1",[visitorId,bot.id]);
+    const currentParent=state.rows[0]?.current_parent_id??null;
+    const awaitingManagerMessage=state.rows[0]?.awaiting_manager_message===true;
+    const appearance=await getMenuAppearance(bot.id);
+    if(text==="💬 ارسال پیام به مدیر"){
+      if(!appearance.visitor_messages_enabled){await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"در حال حاضر امکان ارسال پیام به مدیر فعال نیست."});return json(res,200,{ok:true,disabled:true});}
+      await db.query("INSERT INTO bot_visitor_menu_state(visitor_id,bot_id,current_parent_id,awaiting_manager_message,updated_at) VALUES($1,$2,$3,true,now()) ON CONFLICT(visitor_id) DO UPDATE SET bot_id=EXCLUDED.bot_id,current_parent_id=EXCLUDED.current_parent_id,awaiting_manager_message=true,updated_at=now()",[visitorId,bot.id,currentParent]);
+      await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"پیام خود را برای مدیر بنویسید یا رسانهٔ موردنظر را ارسال کنید. برای انصراف، دکمهٔ لغو را بزنید.",reply_markup:{keyboard:[[{text:"لغو ارسال پیام"}]],resize_keyboard:true,is_persistent:true}});
+      return json(res,200,{ok:true,awaitingManagerMessage:true});
+    }
+    if(awaitingManagerMessage){
+      if(text==="لغو ارسال پیام"){
         await db.query("UPDATE bot_visitor_menu_state SET awaiting_manager_message=false,updated_at=now() WHERE visitor_id=$1 AND bot_id=$2",[visitorId,bot.id]);
         await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,currentParent,visitorId);
         return json(res,200,{ok:true,cancelled:true});
       }
-      if(awaitingManagerMessage){
-        const hasMedia=!!(message.photo||message.document||message.video||message.voice||message.audio||message.sticker);
-        if(!text&&!hasMedia){await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"لطفاً متن یا رسانه‌ای برای مدیر ارسال کنید."});return json(res,200,{ok:true,awaitingManagerMessage:true});}
-        if(!appearance.visitor_messages_enabled){await db.query("UPDATE bot_visitor_menu_state SET awaiting_manager_message=false,updated_at=now() WHERE visitor_id=$1 AND bot_id=$2",[visitorId,bot.id]);await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"دریافت پیام توسط مدیر غیرفعال شده است."});return json(res,200,{ok:true,disabled:true});}
-        await db.query("UPDATE bot_visitor_menu_state SET awaiting_manager_message=false,updated_at=now() WHERE visitor_id=$1 AND bot_id=$2",[visitorId,bot.id]);
-      }
+      const hasMedia=!!(message.photo||message.document||message.video||message.voice||message.audio||message.sticker);
+      if(!text&&!hasMedia){await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"لطفاً متن یا رسانه‌ای برای مدیر ارسال کنید."});return json(res,200,{ok:true,awaitingManagerMessage:true});}
+      if(!appearance.visitor_messages_enabled){await db.query("UPDATE bot_visitor_menu_state SET awaiting_manager_message=false,updated_at=now() WHERE visitor_id=$1 AND bot_id=$2",[visitorId,bot.id]);await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"دریافت پیام توسط مدیر غیرفعال شده است."});return json(res,200,{ok:true,disabled:true});}
+      await db.query("UPDATE bot_visitor_menu_state SET awaiting_manager_message=false,updated_at=now() WHERE visitor_id=$1 AND bot_id=$2",[visitorId,bot.id]);
+    }
+    if(text && !text.startsWith("/") && !awaitingManagerMessage){
       if(text==="🏠 منوی اصلی"){await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,null,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
       if(text==="⬅️ بازگشت"){let target:string|null=null;if(currentParent){const parent=await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2",[currentParent,bot.id]);target=parent.rows[0]?.parent_id??null;}await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,target,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
       const {rows}=await menuKeyboard(bot.id,currentParent,appearance);
       const selected=rows.find((item,index)=>menuLabel(item,index,appearance)===text);
-      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await sendMenuPhotoSafely(decryptToken(bot.encrypted_token),bot.id,message.chat.id,content,selected.description?String(selected.description).slice(0,1000):undefined,nav.keyboard);else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
+      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await sendMenuPhotoSafely(decryptToken(bot.encrypted_token),bot.id,message.chat.id,content,selected.description?String(selected.description).slice(0,1000):undefined,nav.keyboard);else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
     }
     if (text && !awaitingManagerMessage) {
       const rules = await db.query(
@@ -255,17 +255,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
     const visitorContent = (message.text ?? message.caption ?? "").trim().slice(0, 3500);
     const mediaKind = message.photo ? "عکس" : message.document ? "فایل" : message.video ? "ویدئو" : message.voice ? "پیام صوتی" : message.audio ? "صوت" : message.sticker ? "استیکر" : "";
-    if (awaitingManagerMessage && process.env.MANAGEMENT_BOT_TOKEN && (visitorContent || mediaKind)) {
-      const appearance = await db.query("SELECT visitor_messages_enabled FROM bot_menu_appearance WHERE bot_id=$1", [bot.id]);
-      const enabled = appearance.rows[0]?.visitor_messages_enabled !== false;
-      if (enabled) {
+    if (awaitingManagerMessage && (visitorContent || mediaKind)) {
+      if (!process.env.MANAGEMENT_BOT_TOKEN) {
+        await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"پیام شما در گفتگو ثبت شد، اما در حال حاضر اتصال ربات مدیریت برای اطلاع‌رسانی در دسترس نیست."});
+      } else {
         const ownerTelegram = await db.query("SELECT telegram_user_id FROM customer_telegram_accounts WHERE user_id=$1 LIMIT 1", [bot.owner_id]);
-        if (ownerTelegram.rowCount) {
+        if (!ownerTelegram.rowCount) {
+          await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"پیام شما ثبت شد، اما مدیر هنوز حساب تلگرام خود را به ربات مدیریت متصل نکرده است."});
+        } else {
           const visitorName = [sender.first_name, sender.last_name].filter(Boolean).join(" ") || "بازدیدکننده";
           const visitorHandle = sender.username ? "@"+sender.username : "بدون نام کاربری";
-          const notification = "📩 پیام جدید بازدیدکننده\nربات: "+String(bot.display_name || "ربات مشتری")+"\nبازدیدکننده: "+visitorName+" ("+visitorHandle+")\nشناسه: "+String(sender.id)+"\n\n"+(visitorContent || "پیام رسانه‌ای: "+mediaKind)+"\n\nبرای پاسخ، روی همین پیام Reply بزن.";
+          const notification = "📩 پیام جدید بازدیدکننده\\nربات: "+String(bot.display_name || "ربات مشتری")+"\\nبازدیدکننده: "+visitorName+" ("+visitorHandle+")\\nشناسه: "+String(sender.id)+"\\n\\n"+(visitorContent || "پیام رسانه‌ای: "+mediaKind)+"\\n\\nبرای پاسخ، روی همین پیام Reply بزن.";
           const sent = await telegram<{message_id:number}>(process.env.MANAGEMENT_BOT_TOKEN,"sendMessage",{chat_id:ownerTelegram.rows[0].telegram_user_id,text:notification,disable_web_page_preview:true});
           await db.query("INSERT INTO visitor_message_forward_map(management_message_id,management_chat_id,bot_id,owner_user_id,visitor_chat_id,conversation_id,visitor_telegram_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (management_chat_id,management_message_id) DO NOTHING",[sent.message_id,ownerTelegram.rows[0].telegram_user_id,bot.id,bot.owner_id,message.chat.id,conversationId,sender.id]);
+          await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:"✅ پیام شما برای مدیر ارسال شد."});
         }
       }
     }
