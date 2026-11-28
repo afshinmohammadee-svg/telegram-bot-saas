@@ -1,7 +1,7 @@
 import type { ApiRequest, ApiResponse } from "./server.js";
 import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
 import { deleteImage, putImage } from "./object-storage.js";
-import { imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "./image-assets.js";
+import { imageSha256, isLegacyTelegramPhoto, MAX_IMAGES_PER_BOT, newImageKey, validateImage } from "./image-assets.js";
 
 function isObjectKey(value: unknown): value is string {
   return typeof value === "string" && /^bots\/[0-9a-f-]{36}\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(value);
@@ -29,6 +29,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const ownedMenu = await db.query("SELECT id FROM bot_menus WHERE id=$1 AND bot_id=$2", [menuId, bot.id]);
       if (!ownedMenu.rowCount) return json(res, 404, { error: "منو پیدا نشد." });
     }
+    if (req.method === "DELETE") {
+      const client = await db.connect();
+      let oldKey: string | null = null;
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM bots WHERE id=$1 AND owner_id=$2 FOR UPDATE", [bot.id, user.id]);
+        const oldRef = kind === "banner"
+          ? await client.query("SELECT banner_file_id AS ref FROM bot_menu_appearance WHERE bot_id=$1 FOR UPDATE", [bot.id])
+          : await client.query("SELECT response_content AS ref FROM bot_menus WHERE id=$1 AND bot_id=$2 FOR UPDATE", [menuId, bot.id]);
+        const oldValue = oldRef.rows[0]?.ref ?? null;
+        if (isObjectKey(oldValue) && oldValue.startsWith(`bots/${bot.id}/images/`)) oldKey = oldValue;
+        if (kind === "banner") {
+          await client.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1", [bot.id]);
+        } else {
+          await client.query("UPDATE bot_menus SET response_type='text',response_content=NULL,payload=title,updated_at=now() WHERE id=$1 AND bot_id=$2", [menuId, bot.id]);
+        }
+        if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [bot.id, oldKey]);
+        await client.query("COMMIT");
+      } catch {
+        await client.query("ROLLBACK");
+        throw new Error("حذف تصویر ناموفق بود.");
+      } finally {
+        client.release();
+      }
+      if (oldKey) await deleteImage(oldKey).catch(() => undefined);
+      return json(res, 200, { success: true });
+    }
+
     const encoded = String(body.imageBase64 ?? "");
     if (!encoded || encoded.length > 420_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
       return json(res, 400, { error: "داده تصویر معتبر نیست یا بیش از حد بزرگ است." });
@@ -57,7 +85,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       );
       const replacingExisting = typeof oldValue === "string" && (isObjectKey(oldValue) || isLegacyTelegramPhoto(oldValue));
       const total = Number(quota.rows[0].stored_count) + Number(quota.rows[0].legacy_count);
-      if (!replacingExisting && total >= 5) throw new Error("سقف ۵ تصویر برای این ربات تکمیل شده است.");
+      if (!replacingExisting && total >= MAX_IMAGES_PER_BOT) throw new Error("سقف ۵ تصویر برای این ربات تکمیل شده است.");
 
       if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [bot.id, oldKey]);
       await client.query(
