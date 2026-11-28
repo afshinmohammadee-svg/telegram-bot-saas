@@ -1,9 +1,10 @@
-import { createHash, createDecipheriv, randomBytes } from "node:crypto";
+import { createHash, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
 import { Pool } from "pg";
 
 const previewUrl = process.env.PREVIEW_DATABASE_URL;
 const productionUrl = process.env.PRODUCTION_DATABASE_URL;
-const encryptionKeyRaw = process.env.BOT_TOKEN_ENCRYPTION_KEY;
+const previewEncryptionKeyRaw = process.env.PREVIEW_BOT_TOKEN_ENCRYPTION_KEY;
+const productionEncryptionKeyRaw = process.env.PRODUCTION_BOT_TOKEN_ENCRYPTION_KEY;
 const productionAppUrl = (process.env.PRODUCTION_APP_URL || "https://telegram-bot-saas-app-ggr7-production.up.railway.app").replace(/\/$/, "");
 const allowedHosts = new Set([
   "telegram-bot-saas-app-preview.up.railway.app",
@@ -11,17 +12,23 @@ const allowedHosts = new Set([
   "telegram-bot-saas-git-feat-license-customer-menu-a5fd88-afshin7.vercel.app",
 ]);
 
-if (!previewUrl || !productionUrl || !encryptionKeyRaw) {
-  throw new Error("Set PREVIEW_DATABASE_URL, PRODUCTION_DATABASE_URL and BOT_TOKEN_ENCRYPTION_KEY in your local environment.");
+if (!previewUrl || !productionUrl || !previewEncryptionKeyRaw || !productionEncryptionKeyRaw) {
+  throw new Error("Set both database URLs and both environment-specific bot encryption keys in your local environment.");
 }
 if (new URL(productionAppUrl).hostname !== "telegram-bot-saas-app-ggr7-production.up.railway.app") throw new Error("PRODUCTION_APP_URL must be the verified Railway Production host.");
 
-function encryptionKey(): Buffer {
-  if (/^[a-f0-9]{64}$/i.test(encryptionKeyRaw!)) return Buffer.from(encryptionKeyRaw!, "hex");
-  const decoded = Buffer.from(encryptionKeyRaw!, "base64");
+function normalizeEncryptionKey(raw: string): Buffer {
+  if (/^[a-f0-9]{64}$/i.test(raw)) return Buffer.from(raw, "hex");
+  const decoded = Buffer.from(raw, "base64");
   if (decoded.length === 32) return decoded;
-  return createHash("sha256").update(encryptionKeyRaw!, "utf8").digest();
+  return createHash("sha256").update(raw, "utf8").digest();
 }
+const previewEncryptionKey = normalizeEncryptionKey(previewEncryptionKeyRaw!);
+const productionEncryptionKey = normalizeEncryptionKey(productionEncryptionKeyRaw!);
+if (!timingSafeEqual(previewEncryptionKey, productionEncryptionKey)) {
+  throw new Error("Preview and Production BOT_TOKEN_ENCRYPTION_KEY values differ. No database or webhook changes were made.");
+}
+function encryptionKey(): Buffer { return previewEncryptionKey; }
 function decryptToken(payload: string): string {
   const [version, iv, tag, data] = payload.split(".");
   if (version !== "v1" || !iv || !tag || !data) throw new Error("Unsupported encrypted token format.");
