@@ -288,7 +288,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const rawInput = (message.text ?? "").trim();
-    const photoSizes = message.photo ?? [];\n    const photoFileId = [...photoSizes].reverse().find((photo) => photo.file_size !== undefined && photo.file_size <= 300 * 1024)?.file_id ?? photoSizes[0]?.file_id ?? null;
+    const photoSizes = message.photo ?? [];
+    const photoFileId = [...photoSizes].reverse().find((photo) => photo.file_size !== undefined && photo.file_size <= 300 * 1024)?.file_id ?? photoSizes[0]?.file_id ?? null;
     const getPhotoBytes = async () => photoFileId ? downloadPhotoFromManagementBot(token, photoFileId) : null;
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
