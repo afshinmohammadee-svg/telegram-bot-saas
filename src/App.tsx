@@ -105,7 +105,11 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
   const refreshPage = useCallback(async () => {
     setError('')
     try {
-      if (active === 'نمای کلی' || active === 'مدیریت ربات' || active === 'اشتراک و اعتبار') await refreshDashboard()
+      if (active === 'نمای کلی' || active === 'مدیریت ربات' || active === 'اشتراک و اعتبار' || active === 'تنظیمات') await refreshDashboard()
+      if (active === 'تنظیمات' && !isSuperAdmin) {
+        const appearanceData = await api<{ appearance: MenuAppearance }>('/api/bots?resource=menu-appearance')
+        setMenuAppearance(appearanceData.appearance)
+      }
       if (active === 'ربات مرکزی' && isSuperAdmin) { const status = await api<typeof centralBot>('/api/admin/management-bot'); setCentralBot(status) }
       if (active === 'مدیریت پلن‌ها' && isSuperAdmin) { const data = await api<{plans:LicensePlan[]}>('/api/admin/license-plans'); setLicensePlans(data.plans) }
       if (active === 'گفتگوها') {
@@ -307,6 +311,23 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
     finally { setBusy(false) }
   }
 
+  async function toggleVisitorMessages(enabled: boolean) {
+    const previous = menuAppearance
+    const next = { ...previous, visitor_messages_enabled: enabled }
+    setMenuAppearance(next)
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const data = await api<{ appearance: MenuAppearance }>('/api/bots?resource=menu-appearance', {
+        method:'PATCH', body:JSON.stringify(next),
+      })
+      setMenuAppearance(data.appearance)
+      setNotice(enabled ? 'دریافت پیام بازدیدکنندگان فعال شد.' : 'دریافت پیام بازدیدکنندگان غیرفعال شد.')
+    } catch (cause) {
+      setMenuAppearance(previous)
+      setError(cause instanceof Error ? cause.message : 'تغییر تنظیم دریافت پیام ناموفق بود.')
+    } finally { setBusy(false) }
+  }
+
   async function saveMenuAppearance(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
     try {
@@ -465,11 +486,6 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
                 </select></label>
                 <label>عنوان خوشامدگویی<input value={menuAppearance.welcome_title} onChange={e=>setMenuAppearance(v=>({...v,welcome_title:e.target.value}))} maxLength={120} required/></label>
                 <label className="wide-field">متن خوشامدگویی<textarea rows={3} maxLength={700} value={menuAppearance.welcome_text} onChange={e=>setMenuAppearance(v=>({...v,welcome_text:e.target.value}))} required/></label>
-                <label className="wide-field" style={{display:'flex',alignItems:'center',gap:10}}>
-                  <input type="checkbox" checked={menuAppearance.visitor_messages_enabled} onChange={e=>setMenuAppearance(v=>({...v,visitor_messages_enabled:e.target.checked}))}/>
-                  دریافت پیام بازدیدکنندگان در ربات مرکزی (پیش‌فرض فعال)
-                </label>
-                <p className="wide-field" style={{fontSize:12,color:'var(--muted)',marginTop:-8}}>با فعال‌بودن این گزینه، پیام‌های متنی و اعلان رسانه‌های بازدیدکنندگان به حساب تلگرام متصل‌شده شما ارسال می‌شود. برای پاسخ، روی اعلان در ربات مرکزی Reply بزنید.</p>
                 <label className="wide-field">شناسه فایل بنر تلگرام (اختیاری)<input value={menuAppearance.banner_file_id} onChange={e=>setMenuAppearance(v=>({...v,banner_file_id:e.target.value}))} maxLength={500} placeholder="file_id عکس؛ یا از ربات مرکزی ← مدیریت منو ← تنظیم بنر عکس بفرست"/></label>
                 <div className="wide-field" style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
                   <button className="primary-btn" disabled={busy}><ShieldCheck size={16}/> ذخیره ظاهر منو</button>
@@ -544,7 +560,7 @@ export default function App({ isSuperAdmin = false, onCreateUser }: { isSuperAdm
 
           {!loading && active === 'اشتراک و اعتبار' && <section className="panel page-panel"><div className="panel-heading"><div><h2>اشتراک حساب</h2><p>وضعیت فعلی دسترسی به امکانات ربات</p></div><CalendarClock className="muted-icon"/></div><div className="subscription-card"><div className={dashboard?.subscription.active ? 'subscription-status active' : 'subscription-status'}><ShieldCheck size={26}/><b>{dashboard?.subscription.active ? 'اشتراک فعال است' : 'اشتراک فعال ندارید'}</b></div><p>{dashboard?.subscription.expiresAt ? `تاریخ انقضا: ${date(dashboard.subscription.expiresAt)}` : 'برای فعال‌سازی یا تمدید اشتراک با مدیر سامانه تماس بگیر.'}</p><small>پس از انقضای اشتراک، ربات به پیام‌ها پاسخ نمی‌دهد؛ اطلاعات و گفتگوهای ذخیره‌شده حذف نخواهند شد.</small></div></section>}
 
-          {!loading && active === 'تنظیمات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>تنظیمات پنل</h2><p>ترجیحات نمایشی این مرورگر</p></div><Settings className="muted-icon"/></div><div className="settings-row"><div><b>پوسته پنل</b><p>حالت روشن یا تاریک رابط کاربری</p></div><button className="outline-btn" onClick={() => setDark(!dark)}>{dark ? <Sun size={16}/> : <Moon size={16}/>} تغییر به حالت {dark ? 'روشن' : 'تاریک'}</button></div><div className="settings-row"><div><b>امنیت توکن</b><p>توکن ربات در سمت سرور با AES-256-GCM رمزنگاری می‌شود.</p></div><ShieldCheck color="#43c99a"/></div></section>}
+          {!loading && active === 'تنظیمات' && <section className="panel page-panel"><div className="panel-heading"><div><h2>تنظیمات پنل و ربات</h2><p>ترجیحات پنل و نحوه دریافت پیام‌های بازدیدکنندگان</p></div><Settings className="muted-icon"/></div><div className="settings-row"><div><b>دریافت پیام بازدیدکنندگان</b><p>با روشن بودن این گزینه، پیام‌های بازدیدکنندگان رباتت به ربات مرکزی ارسال می‌شود و می‌توانی با Reply به آن‌ها پاسخ بدهی.</p></div><button type="button" role="switch" aria-checked={menuAppearance.visitor_messages_enabled} aria-label="دریافت پیام بازدیدکنندگان" className={'visitor-toggle' + (menuAppearance.visitor_messages_enabled ? ' is-on' : '')} disabled={busy || !bot} onClick={() => toggleVisitorMessages(!menuAppearance.visitor_messages_enabled)}><span className="visitor-toggle-thumb"/><span className="visitor-toggle-state">{menuAppearance.visitor_messages_enabled ? 'روشن' : 'خاموش'}</span></button></div><div className="settings-row"><div><b>پوسته پنل</b><p>حالت روشن یا تاریک رابط کاربری</p></div><button className="outline-btn" onClick={() => setDark(!dark)}>{dark ? <Sun size={16}/> : <Moon size={16}/>} تغییر به حالت {dark ? 'روشن' : 'تاریک'}</button></div><div className="settings-row"><div><b>امنیت توکن</b><p>توکن ربات در سمت سرور با AES-256-GCM رمزنگاری می‌شود.</p></div><ShieldCheck color="#43c99a"/></div>{!bot && <div className="empty-inline">برای تنظیم دریافت پیام، ابتدا ربات تلگرامت را متصل کن.</div>}</section>}
 
           <div className="bottom-note"><ShieldCheck size={17}/><span>اطلاعات ربات‌ها به‌صورت رمزنگاری‌شده نگهداری می‌شوند.</span><span className="note-link">امنیت و حریم خصوصی</span></div>
         </div>
