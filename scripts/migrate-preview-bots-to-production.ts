@@ -1,4 +1,4 @@
-import { createHash, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createHash, createDecipheriv, randomBytes } from "node:crypto";
 import { Pool } from "pg";
 
 const previewUrl = process.env.PREVIEW_DATABASE_URL;
@@ -43,13 +43,13 @@ async function telegram<T>(token: string, method: string, payload: Record<string
   return result.result as T;
 }
 
-type BotRow = { id: string; username: string | null; status: string; encrypted_token: string };
+type BotRow = { id: string; username: string | null; status: string; encrypted_token: string; encryption_key_version: number; created_at: string; rotated_at: string | null };
 const preview = new Pool({ connectionString: previewUrl, max: 2, connectionTimeoutMillis: 10000 });
 const production = new Pool({ connectionString: productionUrl, max: 2, connectionTimeoutMillis: 10000 });
 
 try {
   const source = await preview.query<BotRow>(
-    `SELECT b.id, b.username, b.status, s.encrypted_token
+    `SELECT b.id, b.username, b.status, s.encrypted_token, s.encryption_key_version, s.created_at, s.rotated_at
        FROM bots b JOIN bot_secrets s ON s.bot_id=b.id
       WHERE b.status='active' ORDER BY b.created_at`
   );
@@ -83,8 +83,8 @@ try {
     for (const { bot } of validated) {
       await production.query(
         `INSERT INTO bot_secrets (bot_id, encrypted_token, encryption_key_version, created_at, rotated_at)
-         VALUES ($1,$2,1,now(),NULL) ON CONFLICT (bot_id) DO NOTHING`,
-        [bot.id, bot.encrypted_token]
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (bot_id) DO NOTHING`,
+        [bot.id, bot.encrypted_token, bot.encryption_key_version, bot.created_at, bot.rotated_at]
       );
     }
     for (const row of accountRows.rows) {
@@ -93,7 +93,7 @@ try {
           (id, account_id, provider_id, user_id, access_token, refresh_token, id_token,
            access_token_expires_at, refresh_token_expires_at, scope, password, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT (id) DO NOTHING`,
+         ON CONFLICT DO NOTHING`,
         [row.id, row.account_id, row.provider_id, row.user_id, row.access_token, row.refresh_token,
          row.id_token, row.access_token_expires_at, row.refresh_token_expires_at, row.scope,
          row.password, row.created_at, row.updated_at]
