@@ -1,7 +1,7 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, decryptToken, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
 import { deleteImage, putImage } from "../_lib/object-storage.js";
-import { imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "../_lib/image-assets.js";
+import { exceedsImageQuota, imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "../_lib/image-assets.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
 type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
@@ -75,7 +75,7 @@ async function persistManagedImage(botId: string, kind: "banner" | "menu", menuI
     const quota = await client.query("SELECT (SELECT count(*)::int FROM bot_images WHERE bot_id=$1 AND status='active') AS stored_count, (SELECT count(*)::int FROM bot_menu_appearance WHERE bot_id=$1 AND banner_file_id LIKE 'tgphoto:%') + (SELECT count(*)::int FROM bot_menus WHERE bot_id=$1 AND response_type='photo' AND response_content LIKE 'tgphoto:%') AS legacy_count", [botId]);
     const replacing = isManagedImageKey(oldValue, botId) || isLegacyTelegramPhoto(oldValue);
     const total = Number(quota.rows[0].stored_count) + Number(quota.rows[0].legacy_count);
-    if (!replacing && total >= 5) throw new Error("IMAGE_QUOTA_EXCEEDED");
+    if (exceedsImageQuota(Number(quota.rows[0].stored_count), Number(quota.rows[0].legacy_count), replacing)) throw new Error("IMAGE_QUOTA_EXCEEDED");
     if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [botId, oldKey]);
     await client.query("INSERT INTO bot_images(bot_id,kind,menu_id,object_key,mime_type,size_bytes,sha256,status) VALUES($1,$2,$3,$4,$5,$6,$7,'active')", [botId, kind, menuId, key, detected.mimeType, bytes.length, imageSha256(bytes)]);
     if (kind === "banner") {
