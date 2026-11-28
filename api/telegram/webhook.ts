@@ -17,12 +17,21 @@ function menuLabel(item:MenuRow,index:number,appearance:MenuAppearance){if(appea
 async function getMenuAppearance(botId:string):Promise<MenuAppearance>{const result=await db.query("SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id FROM bot_menu_appearance WHERE bot_id=$1",[botId]);return result.rows[0]??{theme:"luxury_modern",button_columns:1,emoji_mode:"subtle",welcome_title:"به فضای اختصاصی ما خوش آمدید",welcome_text:"برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",banner_file_id:null};}
 async function menuKeyboard(botId:string,parentId:string|null,appearance:MenuAppearance){const result=await db.query(`SELECT m.id,m.title,m.description,m.parent_id,m.response_type,m.response_content,m.target_url,EXISTS(SELECT 1 FROM bot_menus child WHERE child.parent_id=m.id AND child.bot_id=m.bot_id AND child.is_active=true) AS has_children FROM bot_menus m WHERE m.bot_id=$1 AND m.parent_id IS NOT DISTINCT FROM $2::uuid AND m.is_active=true ORDER BY m.sort_order,m.title LIMIT 100`,[botId,parentId]);const rows=result.rows as MenuRow[];const columns=Math.max(1,Math.min(3,Number(appearance.button_columns)||1));const keyboard:Array<Array<{text:string}>>=[];for(let i=0;i<rows.length;i+=columns)keyboard.push(rows.slice(i,i+columns).map((item,index)=>({text:menuLabel(item,i+index,appearance).slice(0,64)})));if(parentId)keyboard.push([{text:"⬅️ بازگشت"},{text:"🏠 منوی اصلی"}]);return{rows,keyboard:{keyboard,resize_keyboard:true,is_persistent:true,input_field_placeholder:"یکی از گزینه‌ها را انتخاب کنید"}};}
 async function sendMenuPhoto(token:string,botId:string,chatId:number,photo:string,caption?:string,replyMarkup?:Record<string,unknown>,parseMode?:string){
-  // Telegram file_id values belong to the bot that received the upload. Only portable
-  // byte payloads created by the management bot may be forwarded to customer bots.
-  const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+\\/=]+)$/);
-  if(!match) throw new Error("این عکس قدیمی است و باید دوباره از ربات مرکزی بارگذاری شود.");
-  const mime=match[1];
-  const bytes=Buffer.from(match[2],"base64");
+  // Telegram file_id values belong to the receiving bot; only legacy bytes or
+  // an active object owned by this exact bot may be forwarded.
+  let mime:string;
+  let bytes:Buffer;
+  if (photo.startsWith(`bots/${botId}/images/`)) {
+    const stored = await db.query("SELECT mime_type FROM bot_images WHERE bot_id=$1 AND object_key=$2 AND status='active' LIMIT 1",[botId,photo]);
+    if (!stored.rowCount) throw new Error("Stored image reference is not owned by this bot");
+    mime = stored.rows[0].mime_type;
+    bytes = await getImage(photo);
+  } else {
+    const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+\\/=]+)$/);
+    if(!match) throw new Error("Unsupported stored photo reference");
+    mime=match[1];
+    bytes=Buffer.from(match[2],"base64");
+  }
   if(!bytes.length||bytes.length>8*1024*1024) throw new Error("Stored photo payload is empty or too large");
   const form=new FormData();form.set("chat_id",String(chatId));form.set("photo",new Blob([bytes],{type:mime}),"menu-image");
   if(caption) form.set("caption",caption);
