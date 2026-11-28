@@ -6,8 +6,11 @@ function required(name: string): string {
   return value;
 }
 
+let cachedClient: S3Client | undefined;
+
 function client() {
-  return new S3Client({
+  if (cachedClient) return cachedClient;
+  cachedClient = new S3Client({
     region: required("NEON_S3_REGION"),
     endpoint: required("NEON_S3_ENDPOINT"),
     forcePathStyle: true,
@@ -17,6 +20,7 @@ function client() {
     },
     requestChecksumCalculation: "WHEN_REQUIRED",
   });
+  return cachedClient;
 }
 
 export async function putImage(key: string, bytes: Buffer, contentType: string) {
