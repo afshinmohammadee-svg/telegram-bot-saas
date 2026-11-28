@@ -30,8 +30,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!ownedMenu.rowCount) return json(res, 404, { error: "منو پیدا نشد." });
     }
     if (req.method === "DELETE") {
-      let client;
-  try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
+      const client = await db.connect();
       let oldKey: string | null = null;
       try {
         await client.query("BEGIN");
@@ -67,7 +66,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
 
     let oldKey: string | null = null;
-    const client = await db.connect();
+    let client;
+    try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
     try {
       await client.query("BEGIN");
       await client.query("SELECT id FROM bots WHERE id=$1 AND owner_id=$2 FOR UPDATE", [bot.id, user.id]);
