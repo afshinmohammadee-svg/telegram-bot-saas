@@ -64,7 +64,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const bytes = Buffer.from(encoded, "base64");
     const detected = validateImage(bytes);
     const key = newImageKey(bot.id, detected.extension);
-    await putImage(key, bytes, detected.mimeType);
+    try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
 
     let oldKey: string | null = null;
     const client = await db.connect();
