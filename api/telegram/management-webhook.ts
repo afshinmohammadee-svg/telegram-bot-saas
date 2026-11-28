@@ -1,8 +1,11 @@
+import type { PoolClient } from "pg";
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, decryptToken, json, safeEqualHex, sha256, telegram } from "../_lib/server.js";
+import { deleteImage, putImage } from "../_lib/object-storage.js";
+import { exceedsImageQuota, imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "../_lib/image-assets.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
-type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
+type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number;file_size?:number}>; contact?: { phone_number: string; user_id?: number } };
 type TgUpdate = { update_id: number; message?: TgMessage };
 
 const adminKeyboard = {
@@ -37,23 +40,79 @@ function configuredAdminIds() {
     .split(",").map((value) => value.trim()).filter((value) => /^\d+$/.test(value)));
 }
 
-async function storePhotoFromManagementBot(token: string, fileId: string): Promise<string> {
+async function downloadPhotoFromManagementBot(token: string, fileId: string): Promise<Buffer> {
   const file = await telegram<{file_path?:string}>(token, "getFile", {file_id:fileId});
   if (!file.file_path) throw new Error("Telegram photo path is unavailable");
-  const response = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+  const response = await fetch("https://api.telegram.org/file/bot" + token + "/" + file.file_path);
   if (!response.ok) throw new Error("Could not download management photo");
   const declaredSize = Number(response.headers.get("content-length") || 0);
-  if (declaredSize > 8 * 1024 * 1024) throw new Error("Photo exceeds 8 MB limit");
+  if (declaredSize > 300 * 1024) throw new Error("Photo exceeds 300 KiB limit");
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("Photo is empty or exceeds 8 MB limit");
-  // Telegram's file endpoint may return application/octet-stream even for valid photos.
-  // Detect the actual format from the file signature instead of trusting that header.
-  let mime = "";
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) mime = "image/jpeg";
-  else if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))) mime = "image/png";
-  else if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") mime = "image/webp";
-  if (!mime) throw new Error("Unsupported photo format: file signature is not JPEG, PNG, or WebP");
-  return `tgphoto:${mime}:${bytes.toString("base64")}`;
+  validateImage(bytes);
+  return bytes;
+}
+
+function isManagedImageKey(value: unknown, botId: string): value is string {
+  return typeof value === "string" && value.startsWith("bots/" + botId + "/images/") && /^bots\/[0-9a-f-]{36}\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(value);
+}
+
+async function persistManagedImage(botId: string, kind: "banner" | "menu", menuId: string | null, bytes: Buffer, activateMenu = false) {
+  const detected = validateImage(bytes);
+  const key = newImageKey(botId, detected.extension);
+  try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
+  let client: PoolClient;
+  try { client = await db.connect(); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
+  let oldKey: string | null = null;
+  try {
+    await client.query("BEGIN");
+    const bot = await client.query("SELECT id FROM bots WHERE id=$1 FOR UPDATE", [botId]);
+    if (!bot.rowCount) throw new Error("Managed bot no longer exists");
+    const oldRef = kind === "banner"
+      ? await client.query("SELECT banner_file_id AS ref FROM bot_menu_appearance WHERE bot_id=$1 FOR UPDATE", [botId])
+      : await client.query("SELECT response_content AS ref FROM bot_menus WHERE id=$1 AND bot_id=$2 FOR UPDATE", [menuId, botId]);
+    if (kind === "menu" && !oldRef.rowCount) throw new Error("Menu no longer exists");
+    const oldValue = oldRef.rows[0]?.ref ?? null;
+    if (isManagedImageKey(oldValue, botId)) oldKey = oldValue;
+    const quota = await client.query("SELECT (SELECT count(*)::int FROM bot_images WHERE bot_id=$1 AND status='active') AS stored_count, (SELECT count(*)::int FROM bot_menu_appearance WHERE bot_id=$1 AND banner_file_id LIKE 'tgphoto:%') + (SELECT count(*)::int FROM bot_menus WHERE bot_id=$1 AND response_type='photo' AND response_content LIKE 'tgphoto:%') AS legacy_count", [botId]);
+    const replacing = isManagedImageKey(oldValue, botId) || isLegacyTelegramPhoto(oldValue);
+    if (exceedsImageQuota(Number(quota.rows[0].stored_count), Number(quota.rows[0].legacy_count), replacing)) throw new Error("IMAGE_QUOTA_EXCEEDED");
+    if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [botId, oldKey]);
+    await client.query("INSERT INTO bot_images(bot_id,kind,menu_id,object_key,mime_type,size_bytes,sha256,status) VALUES($1,$2,$3,$4,$5,$6,$7,'active')", [botId, kind, menuId, key, detected.mimeType, bytes.length, imageSha256(bytes)]);
+    if (kind === "banner") {
+      await client.query("INSERT INTO bot_menu_appearance(bot_id,banner_file_id) VALUES($1,$2) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()", [botId, key]);
+    } else {
+      await client.query("UPDATE bot_menus SET response_type='photo',response_content=$3,payload=$3,is_active=CASE WHEN $4 THEN true ELSE is_active END,updated_at=now() WHERE id=$1 AND bot_id=$2", [menuId, botId, key, activateMenu]);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    await deleteImage(key).catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
+  if (oldKey) await deleteImage(oldKey).catch(() => undefined);
+  return key;
+}
+
+async function removeManagedImage(botId: string, kind: "banner" | "menu", menuId: string | null) {
+  const client = await db.connect();
+  let oldKey: string | null = null;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM bots WHERE id=$1 FOR UPDATE", [botId]);
+    const oldRef = kind === "banner"
+      ? await client.query("SELECT banner_file_id AS ref FROM bot_menu_appearance WHERE bot_id=$1 FOR UPDATE", [botId])
+      : await client.query("SELECT response_content AS ref FROM bot_menus WHERE id=$1 AND bot_id=$2 FOR UPDATE", [menuId, botId]);
+    const oldValue = oldRef.rows[0]?.ref ?? null;
+    if (isManagedImageKey(oldValue, botId)) oldKey = oldValue;
+    if (kind === "banner") await client.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1", [botId]);
+    else await client.query("UPDATE bot_menus SET response_type='text',response_content=NULL,payload=title,updated_at=now() WHERE id=$1 AND bot_id=$2", [menuId, botId]);
+    if (oldKey) await client.query("DELETE FROM bot_images WHERE bot_id=$1 AND object_key=$2", [botId, oldKey]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+  if (oldKey) await deleteImage(oldKey).catch(() => undefined);
 }
 
 async function send(token: string, chatId: number, text: string, keyboard?: Record<string, unknown>) {
@@ -230,8 +289,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const rawInput = (message.text ?? "").trim();
-    const photoFileId = message.photo?.[message.photo.length - 1]?.file_id ?? null;
-    const getPhotoPayload = async () => photoFileId ? storePhotoFromManagementBot(token, photoFileId) : null;
+    const photoSizes = message.photo ?? [];
+    const photoFileId = [...photoSizes].reverse().find((photo) => photo.file_size !== undefined && photo.file_size <= 300 * 1024)?.file_id ?? photoSizes[0]?.file_id ?? null;
+    const getPhotoBytes = async () => {
+      if (!photoFileId) return null;
+      try { return await downloadPhotoFromManagementBot(token, photoFileId); }
+      catch (error) {
+        console.warn("management_photo_validation_failed", error instanceof Error ? error.name : "unknown");
+        return null;
+      }
+    };
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
     const menuLicense = await db.query(
@@ -302,7 +369,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (rawInput === "🖼 تنظیم بنر") { await saveSession("banner_wait",{}); await send(token,chatId,"عکس بنر صفحه اصلی را همین‌جا ارسال کن. متن روی بنر از بخش «متن خوشامدگویی» در پنل تنظیم می‌شود؛ برای لغو /cancel را بفرست."); return json(res,200,{ok:true}); }
-      if (rawInput === "🗑 حذف بنر") { await db.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1",[botId]); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
+      if (rawInput === "🗑 حذف بنر") { await removeManagedImage(botId,"banner",null); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
       if (rawInput === "➕ گزینه اصلی جدید") {
         await saveSession("add_title",{parentId:null});
         await send(token,chatId,"عنوان گزینه اصلی را ارسال کنید (حداکثر ۱۲۰ نویسه). برای لغو /cancel را بفرستید.");
@@ -352,17 +419,40 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (menuSession.step === "banner_wait") {
-        const photoPayload = await getPhotoPayload();
-        if (!photoPayload) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
-        await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoPayload]);
-        await saveSession("home",{},botId); await send(token,chatId,"✅ بنر صفحه اصلی ذخیره شد.",homeKeyboard); return json(res,200,{ok:true});
+        const photoBytes = await getPhotoBytes();
+        if (!photoBytes) { await send(token,chatId,"لطفاً تصویر JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را به‌صورت Photo ارسال کن."); return json(res,200,{ok:true}); }
+        try { await persistManagedImage(botId,"banner",null,photoBytes); }
+        catch (error) {
+          if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+            await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است. ابتدا یکی از تصاویر قبلی را حذف کنید.",homeKeyboard);
+            return json(res,200,{ok:true});
+          }
+          throw error;
+        }
+        await saveSession("home",{},botId);
+        await send(token,chatId,"✅ بنر صفحه اصلی در فضای ذخیره‌سازی امن ثبت شد.",homeKeyboard);
+        return json(res,200,{ok:true});
       }
       if (menuSession.step === "add_content") {
-        const photoPayload = menuSession.draft?.responseType === "photo" ? await getPhotoPayload() : null;
-        if (menuSession.draft?.responseType === "photo" && !photoPayload) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(menuSession.draft?.responseType === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
-        if(menuSession.draft?.responseType==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
-        await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,menuSession.draft?.responseType==="photo"?(mediaCaption||null):null,draft.parentId??null,draft.responseType,draft.responseType==="url"?null:value,draft.responseType==="url"?value:null]);
+        const type = menuSession.draft?.responseType;
+        if (type === "photo") {
+          const photoBytes = await getPhotoBytes();
+          if (!photoBytes) { await send(token,chatId,"لطفاً تصویر JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را ارسال کن؛ توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          const inserted = await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,'photo',NULL,NULL,false) RETURNING id", [botId,draft.title,"",mediaCaption||null,draft.parentId??null]);
+          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes,true); }
+          catch (error) {
+            await db.query("DELETE FROM bot_menus WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]);
+            if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+              await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است. ابتدا یکی از تصاویر قبلی را حذف کنید.",homeKeyboard);
+              return json(res,200,{ok:true});
+            }
+            throw error;
+          }
+        } else {
+          const value=rawInput.trim().slice(0,15000000);
+          if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود. دوباره ارسال کنید.");return json(res,200,{ok:true});}
+          await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true)",[botId,draft.title,value,null,draft.parentId??null,type,type==="url"?null:value,type==="url"?value:null]);
+        }
         await saveSession("home",{},botId);
         await send(token,chatId,"✅ گزینه منو با موفقیت ثبت شد.",homeKeyboard);
         return json(res,200,{ok:true});
@@ -388,11 +478,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (menuSession.step === "edit_content") {
         const current=await db.query("SELECT response_type FROM bot_menus WHERE id=$1 AND bot_id=$2",[draft.menuId,botId]);
         const type=current.rows[0]?.response_type;
-        const photoPayload = type === "photo" ? await getPhotoPayload() : null;
-        if (type === "photo" && !photoPayload) { await send(token,chatId,"لطفاً عکس جدید را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
-        const value=(type === "photo" ? (photoPayload ?? "") : rawInput).trim().slice(0,15000000);
-        if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
-        await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,description=CASE WHEN $3='photo' THEN $5 ELSE description END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value,mediaCaption||null]);
+        if (type === "photo") {
+          const photoBytes = await getPhotoBytes();
+          if (!photoBytes) { await send(token,chatId,"لطفاً تصویر جدید JPEG، PNG یا WebP با حجم حداکثر ۳۰۰ کیلوبایت را ارسال کن و توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
+          try { await persistManagedImage(botId,"menu",draft.menuId,photoBytes); }
+          catch (error) {
+            if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+              await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است.",homeKeyboard);
+              return json(res,200,{ok:true});
+            }
+            throw error;
+          }
+          await db.query("UPDATE bot_menus SET description=$3,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,mediaCaption||null]);
+        } else {
+          const value=rawInput.trim().slice(0,15000000);
+          if(type==="url"&&!/^https:\/\//i.test(value)){await send(token,chatId,"لینک باید با https:// شروع شود.");return json(res,200,{ok:true});}
+          await db.query("UPDATE bot_menus SET response_content=CASE WHEN $3='url' THEN response_content ELSE $4 END,target_url=CASE WHEN $3='url' THEN $4 ELSE target_url END,payload=$4,updated_at=now() WHERE id=$1 AND bot_id=$2",[draft.menuId,botId,type,value]);
+        }
         await saveSession("home",{},botId);await send(token,chatId,"✅ پاسخ گزینه به‌روزرسانی شد.",homeKeyboard);return json(res,200,{ok:true});
       }
       await send(token,chatId,"از گزینه‌های مدیریت منو استفاده کنید.",homeKeyboard);

@@ -9,7 +9,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "start": "tsx server.ts",
     "typecheck": "tsc -b",
-    "auth:create-admin": "auth create-admin --config ./src/lib/auth.ts"
+    "auth:create-admin": "auth create-admin --config ./src/lib/auth.ts",
+    "test:image-assets": "node --import tsx --test tests/image-assets.test.ts",
+    "storage:smoke": "tsx scripts/storage-smoke.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.0",
@@ -17,7 +19,8 @@
     "pg": "^8.16.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "@aws-sdk/client-s3": "^3.850.0"
   },
   "devDependencies": {
     "@types/pg": "^8.15.5",

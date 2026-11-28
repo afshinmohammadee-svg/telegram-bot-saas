@@ -1,5 +1,6 @@
 import type { ApiRequest, ApiResponse } from "../_lib/server.js";
 import { db, decryptToken, json, safeEqualHex, sha256, subscriptionActive, telegram } from "../_lib/server.js";
+import { getImage } from "../_lib/object-storage.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string };
 type TgMessage = { message_id: number; date: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; photo?: unknown[]; document?: unknown; video?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown };
@@ -15,13 +16,22 @@ type MenuAppearance = {theme:string;button_columns:number;emoji_mode:string;welc
 function menuLabel(item:MenuRow,index:number,appearance:MenuAppearance){if(appearance.emoji_mode==="off")return item.title;let icon=appearance.theme==="minimal"?"·":appearance.theme==="vibrant"?(item.response_type==="url"?"🔗":item.response_type==="submenu"?"📂":"✨"):(item.response_type==="url"?"↗️":item.response_type==="submenu"?"✧":"◆");if(appearance.emoji_mode==="expressive"){const icons=["💎","✨","🌙","🪄","🖋️","🎯","🛍️","📌"];icon=icons[index%icons.length];}return(icon?icon+" ":"")+item.title;}
 async function getMenuAppearance(botId:string):Promise<MenuAppearance>{const result=await db.query("SELECT theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id FROM bot_menu_appearance WHERE bot_id=$1",[botId]);return result.rows[0]??{theme:"luxury_modern",button_columns:1,emoji_mode:"subtle",welcome_title:"به فضای اختصاصی ما خوش آمدید",welcome_text:"برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.",banner_file_id:null};}
 async function menuKeyboard(botId:string,parentId:string|null,appearance:MenuAppearance){const result=await db.query(`SELECT m.id,m.title,m.description,m.parent_id,m.response_type,m.response_content,m.target_url,EXISTS(SELECT 1 FROM bot_menus child WHERE child.parent_id=m.id AND child.bot_id=m.bot_id AND child.is_active=true) AS has_children FROM bot_menus m WHERE m.bot_id=$1 AND m.parent_id IS NOT DISTINCT FROM $2::uuid AND m.is_active=true ORDER BY m.sort_order,m.title LIMIT 100`,[botId,parentId]);const rows=result.rows as MenuRow[];const columns=Math.max(1,Math.min(3,Number(appearance.button_columns)||1));const keyboard:Array<Array<{text:string}>>=[];for(let i=0;i<rows.length;i+=columns)keyboard.push(rows.slice(i,i+columns).map((item,index)=>({text:menuLabel(item,i+index,appearance).slice(0,64)})));if(parentId)keyboard.push([{text:"⬅️ بازگشت"},{text:"🏠 منوی اصلی"}]);return{rows,keyboard:{keyboard,resize_keyboard:true,is_persistent:true,input_field_placeholder:"یکی از گزینه‌ها را انتخاب کنید"}};}
-async function sendMenuPhoto(token:string,chatId:number,photo:string,caption?:string,replyMarkup?:Record<string,unknown>,parseMode?:string){
-  // Telegram file_id values belong to the bot that received the upload. Only portable
-  // byte payloads created by the management bot may be forwarded to customer bots.
-  const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+\\/=]+)$/);
-  if(!match) throw new Error("این عکس قدیمی است و باید دوباره از ربات مرکزی بارگذاری شود.");
-  const mime=match[1];
-  const bytes=Buffer.from(match[2],"base64");
+async function sendMenuPhoto(token:string,botId:string,chatId:number,photo:string,caption?:string,replyMarkup?:Record<string,unknown>,parseMode?:string){
+  // Telegram file_id values belong to the receiving bot; only legacy bytes or
+  // an active object owned by this exact bot may be forwarded.
+  let mime:string;
+  let bytes:Buffer;
+  if (photo.startsWith(`bots/${botId}/images/`)) {
+    const stored = await db.query("SELECT mime_type FROM bot_images WHERE bot_id=$1 AND object_key=$2 AND status='active' LIMIT 1",[botId,photo]);
+    if (!stored.rowCount) throw new Error("Stored image reference is not owned by this bot");
+    mime = stored.rows[0].mime_type;
+    bytes = await getImage(photo);
+  } else {
+    const match=photo.match(/^tgphoto:(image\/(?:jpeg|png|webp)):([A-Za-z0-9+\\/=]+)$/);
+    if(!match) throw new Error("Unsupported stored photo reference");
+    mime=match[1];
+    bytes=Buffer.from(match[2],"base64");
+  }
   if(!bytes.length||bytes.length>8*1024*1024) throw new Error("Stored photo payload is empty or too large");
   const form=new FormData();form.set("chat_id",String(chatId));form.set("photo",new Blob([bytes],{type:mime}),"menu-image");
   if(caption) form.set("caption",caption);
@@ -31,15 +41,15 @@ async function sendMenuPhoto(token:string,chatId:number,photo:string,caption?:st
   const result=await response.json() as {ok:boolean;description?:string};
   if(!response.ok||!result.ok) throw new Error(result.description||"Telegram photo upload failed");
 }
-async function sendMenuPhotoSafely(token:string,chatId:number,photo:string,caption:string|undefined,replyMarkup:Record<string,unknown>,parseMode?:string){
+async function sendMenuPhotoSafely(token:string,botId:string,chatId:number,photo:string,caption:string|undefined,replyMarkup:Record<string,unknown>,parseMode?:string){
   try {
-    await sendMenuPhoto(token,chatId,photo,caption,replyMarkup,parseMode);
+    await sendMenuPhoto(token,botId,chatId,photo,caption,replyMarkup,parseMode);
   } catch (error) {
     console.error("telegram_menu_photo_delivery_error",error instanceof Error?error.message:"unknown error");
     await telegram(token,"sendMessage",{chat_id:chatId,text:"متأسفانه تصویر این گزینه در دسترس نیست. لطفاً مالک ربات تصویر را دوباره از بخش «مدیریت منو» در ربات مرکزی بارگذاری کند.",reply_markup:replyMarkup});
   }
 }
-async function showMenu(token:string,botId:string,chatId:number,parentId:string|null,visitorId?:string){const appearance=await getMenuAppearance(botId);const{rows,keyboard}=await menuKeyboard(botId,parentId,appearance);if(visitorId)await db.query(`INSERT INTO bot_visitor_menu_state(visitor_id,bot_id,current_parent_id,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(visitor_id) DO UPDATE SET bot_id=EXCLUDED.bot_id,current_parent_id=EXCLUDED.current_parent_id,updated_at=now()`,[visitorId,botId,parentId]);if(!rows.length){await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است.",reply_markup:keyboard});return;}const mark=appearance.theme==="minimal"?"":appearance.theme==="vibrant"?"🌈 ":"✦ ";let heading=mark+String(appearance.welcome_title||"به فضای اختصاصی ما خوش آمدید");if(parentId){const path=await db.query(`WITH RECURSIVE menu_path AS (SELECT id,title,parent_id,0 AS depth FROM bot_menus WHERE id=$1 AND bot_id=$2 UNION ALL SELECT p.id,p.title,p.parent_id,c.depth+1 FROM bot_menus p JOIN menu_path c ON c.parent_id=p.id WHERE p.bot_id=$2) SELECT title FROM menu_path ORDER BY depth DESC`,[parentId,botId]);heading=mark+(path.rows.map((x:{title:string})=>x.title).join("  ›  ")||heading);}const caption=parentId?"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:"):"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text||"برای ادامه یکی از گزینه‌ها را انتخاب کنید."));if(!parentId&&appearance.banner_file_id)await sendMenuPhotoSafely(token,chatId,appearance.banner_file_id,caption,keyboard,"HTML");else await telegram(token,"sendMessage",{chat_id:chatId,text:caption,parse_mode:"HTML",reply_markup:keyboard});}
+async function showMenu(token:string,botId:string,chatId:number,parentId:string|null,visitorId?:string){const appearance=await getMenuAppearance(botId);const{rows,keyboard}=await menuKeyboard(botId,parentId,appearance);if(visitorId)await db.query(`INSERT INTO bot_visitor_menu_state(visitor_id,bot_id,current_parent_id,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(visitor_id) DO UPDATE SET bot_id=EXCLUDED.bot_id,current_parent_id=EXCLUDED.current_parent_id,updated_at=now()`,[visitorId,botId,parentId]);if(!rows.length){await telegram(token,"sendMessage",{chat_id:chatId,text:"برای این بخش هنوز گزینه‌ای تعریف نشده است.",reply_markup:keyboard});return;}const mark=appearance.theme==="minimal"?"":appearance.theme==="vibrant"?"🌈 ":"✦ ";let heading=mark+String(appearance.welcome_title||"به فضای اختصاصی ما خوش آمدید");if(parentId){const path=await db.query(`WITH RECURSIVE menu_path AS (SELECT id,title,parent_id,0 AS depth FROM bot_menus WHERE id=$1 AND bot_id=$2 UNION ALL SELECT p.id,p.title,p.parent_id,c.depth+1 FROM bot_menus p JOIN menu_path c ON c.parent_id=p.id WHERE p.bot_id=$2) SELECT title FROM menu_path ORDER BY depth DESC`,[parentId,botId]);heading=mark+(path.rows.map((x:{title:string})=>x.title).join("  ›  ")||heading);}const caption=parentId?"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml("یکی از گزینه‌های مرتبط را انتخاب کنید:"):"<b>"+escapeHtml(heading)+"</b>\n\n"+escapeHtml(String(appearance.welcome_text||"برای ادامه یکی از گزینه‌ها را انتخاب کنید."));if(!parentId&&appearance.banner_file_id)await sendMenuPhotoSafely(token,botId,chatId,appearance.banner_file_id,caption,keyboard,"HTML");else await telegram(token,"sendMessage",{chat_id:chatId,text:caption,parse_mode:"HTML",reply_markup:keyboard});}
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
   const rawId = req.query.botId;
@@ -100,7 +110,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               };
               const replyMarkup = {reply_markup:keyboard};
               if (item.response_type === "photo") {
-                await sendMenuPhotoSafely(token,callbackChatId,content,item.description?String(item.description).slice(0,1000):undefined,keyboard);
+                await sendMenuPhotoSafely(token,bot.id,callbackChatId,content,item.description?String(item.description).slice(0,1000):undefined,keyboard);
               } else if (item.response_type === "document") {
                 await telegram(token,"sendDocument",{chat_id:callbackChatId,document:content,...replyMarkup});
               } else {
@@ -203,7 +213,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if(text==="⬅️ بازگشت"){let target:string|null=null;if(currentParent){const parent=await db.query("SELECT parent_id FROM bot_menus WHERE id=$1 AND bot_id=$2",[currentParent,bot.id]);target=parent.rows[0]?.parent_id??null;}await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,target,visitorId);return json(res,200,{ok:true,stored:true,menuNavigation:true});}
       const {rows}=await menuKeyboard(bot.id,currentParent,appearance);
       const selected=rows.find((item,index)=>menuLabel(item,index,appearance)===text);
-      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await sendMenuPhotoSafely(decryptToken(bot.encrypted_token),message.chat.id,content,selected.description?String(selected.description).slice(0,1000):undefined,nav.keyboard);else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
+      if(selected){if(selected.response_type==="submenu"||selected.has_children===true)await showMenu(decryptToken(bot.encrypted_token),bot.id,message.chat.id,selected.id,visitorId);else{const content=String(selected.response_type==="url"?selected.target_url??"":selected.response_content??selected.description??selected.title);const nav=await menuKeyboard(bot.id,currentParent,appearance);if(selected.response_type==="photo")await sendMenuPhotoSafely(decryptToken(bot.encrypted_token),bot.id,message.chat.id,content,selected.description?String(selected.description).slice(0,1000):undefined,nav.keyboard);else if(selected.response_type==="document")await telegram(decryptToken(bot.encrypted_token),"sendDocument",{chat_id:message.chat.id,document:content,reply_markup:nav.keyboard});else await telegram(decryptToken(bot.encrypted_token),"sendMessage",{chat_id:message.chat.id,text:selected.response_type==="url"?"🔗 لینک موردنظر:\n"+content:content,reply_markup:nav.keyboard,disable_web_page_preview:true});}return json(res,200,{ok:true,stored:true,menuSelection:true});}
     }
     if (text) {
       const rules = await db.query(

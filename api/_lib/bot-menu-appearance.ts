@@ -1,5 +1,6 @@
 import type { ApiRequest, ApiResponse } from "./server.js";
 import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
+import { isLegacyTelegramPhoto } from "./image-assets.js";
 
 const defaults = {
   theme: "luxury_modern",
@@ -44,6 +45,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!Number.isInteger(columns) || columns < 1 || columns > 3) return json(res,400,{error:"تعداد ستون باید بین ۱ تا ۳ باشد."});
     if (!["off","subtle","expressive"].includes(emojiMode)) return json(res,400,{error:"حالت ایموجی معتبر نیست."});
     if (!title || !welcome) return json(res,400,{error:"عنوان و متن خوشامدگویی نمی‌توانند خالی باشند."});
+    if (banner.startsWith("bots/")) {
+      const ownedImage = await db.query("SELECT 1 FROM bot_images WHERE bot_id=$1 AND object_key=$2 AND status='active' LIMIT 1", [bot.id, banner]);
+      if (!ownedImage.rowCount) return json(res, 400, { error: "شناسه تصویر معتبر نیست." });
+    } else if (banner && !isLegacyTelegramPhoto(banner)) {
+      return json(res, 400, { error: "برای بنر از بارگذاری تصویر استفاده کن." });
+    }
     const result = await db.query(
       `INSERT INTO bot_menu_appearance (bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,visitor_messages_enabled,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
