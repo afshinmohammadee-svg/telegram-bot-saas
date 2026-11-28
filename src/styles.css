@@ -41,3 +41,51 @@
 .qr-panel>div:first-child{min-width:0}.qr-panel b{font-size:13px}.qr-panel p{font-size:11px;color:var(--muted);line-height:1.9;margin:7px 0 13px}
 .qr-result{display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 150px}.qr-result img{width:140px;height:140px;object-fit:contain;background:#fff;border-radius:10px;padding:6px}.qr-result a{font-size:10px;color:var(--accent);text-decoration:none}
 @media(max-width:520px){.qr-panel{align-items:flex-start;flex-direction:column}.qr-result{align-self:center}}
+
+/* Menu builder: responsive, touch-friendly layout */
+.menu-builder{display:grid;gap:14px;min-width:0}
+.menu-builder .panel{min-width:0;min-height:0;padding:clamp(14px,2vw,22px)}
+.menu-builder .rule-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.menu-builder .rule-form label{min-width:0;line-height:1.8}
+.menu-builder .rule-form input,.menu-builder .rule-form select,.menu-builder .rule-form textarea{min-width:0;min-height:44px;font-size:13px}
+.menu-builder .rule-form textarea{min-height:100px}
+.menu-builder .rule-form input[type=checkbox]{width:22px;height:22px;min-height:22px;flex:0 0 22px;accent-color:var(--accent)}
+.menu-cards-mobile{display:none}
+@media(max-width:760px){
+  .content{padding:16px 12px 28px}
+  .menu-builder{gap:12px}
+  .menu-builder .panel{padding:14px 12px;border-radius:12px}
+  .menu-builder .panel-heading{gap:10px;margin-bottom:14px}
+  .menu-builder .panel-heading h2{font-size:14px;line-height:1.8}
+  .menu-builder .panel-heading p{font-size:10px;line-height:1.9}
+  .menu-builder .rule-form{grid-template-columns:minmax(0,1fr);gap:12px}
+  .menu-builder .rule-form .wide-field{grid-column:auto}
+  .menu-builder .rule-form label{font-size:11px}
+  .menu-builder .rule-form input,.menu-builder .rule-form select,.menu-builder .rule-form textarea{padding:11px 10px;font-size:13px}
+  .menu-builder .rule-form button{min-height:44px;justify-content:center}
+  .menu-builder .rule-form .wide-field[style*="display:flex"]{align-items:stretch!important;flex-direction:column}
+  .menu-builder .rule-form .wide-field[style*="display:flex"] button{width:100%}
+  .menu-table-desktop{display:none}
+  .menu-cards-mobile{display:grid;gap:10px}
+  .menu-mobile-card{min-width:0;padding:13px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);display:grid;gap:11px}
+  .menu-mobile-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .menu-mobile-card-head b{font-size:12px;overflow-wrap:anywhere}
+  .menu-mobile-meta{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:10px}
+  .menu-mobile-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .menu-mobile-actions button{min-height:42px;justify-content:center}
+  .menu-builder .page-panel{padding:13px}
+}
+@media(max-width:390px){
+  .menu-builder .panel-heading .muted-icon{display:none}
+  .menu-builder .rule-form .wide-field p{font-size:10px!important}
+}
+/* Make the account-to-Telegram action unmistakable on narrow screens */
+.auth-session-bar .auth-connect-button{min-height:42px;padding:10px 16px;border-width:2px;font-size:12px;box-shadow:0 0 0 3px #7568ed20,0 7px 18px #5e52d855}
+@media(max-width:520px){
+  .auth-session-bar{align-items:stretch;gap:9px}
+  .auth-session-bar>span:first-child{width:100%}
+  .auth-session-bar .auth-connect-button{width:100%;justify-content:center;order:2;min-height:46px;font-size:13px}
+  .auth-session-bar .auth-connect-hint{font-size:10px}
+  .auth-session-bar .auth-telegram-link{order:3;text-align:center;justify-content:center;width:100%;padding:10px}
+  .auth-session-bar button:last-child{order:4;margin-right:0;margin-left:auto}
+}
