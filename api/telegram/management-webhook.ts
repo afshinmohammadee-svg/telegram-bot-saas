@@ -201,9 +201,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const customerToken = decryptToken(mapping.rows[0].encrypted_token);
         const delivered = await telegram<{message_id:number}>(customerToken,"sendMessage",{chat_id:mapping.rows[0].visitor_chat_id,text:replyText});
         await db.query(
-          "INSERT INTO messages(conversation_id,telegram_message_id,direction,sender_type,text_body,delivery_status,sent_at) VALUES($1,$2,'outbound','owner',$3,'sent',now())",
+          "INSERT INTO messages(conversation_id,telegram_message_id,direction,sender_type,text_body,delivery_status,sent_at) VALUES($1,$2,'outbound','bot_owner',$3,'sent',now())",
           [mapping.rows[0].conversation_id,delivered.message_id,replyText],
         );
+        await db.query("UPDATE conversations SET last_message_at=now(),status='open',updated_at=now() WHERE id=$1",[mapping.rows[0].conversation_id]);
         await send(token,chatId,"✅ پاسخ از طریق ربات «"+String(mapping.rows[0].display_name||"مشتری") + "» برای بازدیدکننده ارسال شد.",customerKeyboard);
         return json(res,200,{ok:true,replied:true});
       }
