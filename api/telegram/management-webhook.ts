@@ -55,7 +55,7 @@ function isManagedImageKey(value: unknown, botId: string): value is string {
   return typeof value === "string" && value.startsWith("bots/" + botId + "/images/") && /^bots\/[0-9a-f-]{36}\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(value);
 }
 
-async function persistManagedImage(botId: string, kind: "banner" | "menu", menuId: string | null, bytes: Buffer) {
+async function persistManagedImage(botId: string, kind: "banner" | "menu", menuId: string | null, bytes: Buffer, activateMenu = false) {
   const detected = validateImage(bytes);
   const key = newImageKey(botId, detected.extension);
   try { await putImage(key, bytes, detected.mimeType); } catch (error) { await deleteImage(key).catch(() => undefined); throw error; }
@@ -80,7 +80,7 @@ async function persistManagedImage(botId: string, kind: "banner" | "menu", menuI
     if (kind === "banner") {
       await client.query("INSERT INTO bot_menu_appearance(bot_id,banner_file_id) VALUES($1,$2) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()", [botId, key]);
     } else {
-      await client.query("UPDATE bot_menus SET response_type='photo',response_content=$3,payload=$3,updated_at=now() WHERE id=$1 AND bot_id=$2", [menuId, botId, key]);
+      await client.query("UPDATE bot_menus SET response_type='photo',response_content=$3,payload=$3,is_active=CASE WHEN $4 THEN true ELSE is_active END,updated_at=now() WHERE id=$1 AND bot_id=$2", [menuId, botId, key, activateMenu]);
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -430,7 +430,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           const photoBytes = await getPhotoBytes();
           if (!photoBytes) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
           const inserted = await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,'photo',NULL,NULL,false) RETURNING id", [botId,draft.title,"",mediaCaption||null,draft.parentId??null]);
-          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes); await db.query("UPDATE bot_menus SET is_active=true,updated_at=now() WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]); }
+          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes,true); }
           catch (error) {
             await db.query("DELETE FROM bot_menus WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]);
             if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
