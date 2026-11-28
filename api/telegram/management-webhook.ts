@@ -360,7 +360,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (rawInput === "🖼 تنظیم بنر") { await saveSession("banner_wait",{}); await send(token,chatId,"عکس بنر صفحه اصلی را همین‌جا ارسال کن. متن روی بنر از بخش «متن خوشامدگویی» در پنل تنظیم می‌شود؛ برای لغو /cancel را بفرست."); return json(res,200,{ok:true}); }
-      if (rawInput === "🗑 حذف بنر") { await db.query("UPDATE bot_menu_appearance SET banner_file_id=NULL,updated_at=now() WHERE bot_id=$1",[botId]); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
+      if (rawInput === "🗑 حذف بنر") { await removeManagedImage(botId,"banner",null); await saveSession("home",{},botId); await send(token,chatId,"بنر صفحه اصلی حذف شد.",homeKeyboard); return json(res,200,{ok:true}); }
       if (rawInput === "➕ گزینه اصلی جدید") {
         await saveSession("add_title",{parentId:null});
         await send(token,chatId,"عنوان گزینه اصلی را ارسال کنید (حداکثر ۱۲۰ نویسه). برای لغو /cancel را بفرستید.");
@@ -410,10 +410,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return json(res,200,{ok:true});
       }
       if (menuSession.step === "banner_wait") {
-        const photoPayload = await getPhotoPayload();
-        if (!photoPayload) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
-        await db.query(`INSERT INTO bot_menu_appearance(bot_id,theme,button_columns,emoji_mode,welcome_title,welcome_text,banner_file_id,updated_at) VALUES($1,'luxury_modern',1,'subtle','به فضای اختصاصی ما خوش آمدید','برای مشاهده خدمات و اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید.',$2,now()) ON CONFLICT(bot_id) DO UPDATE SET banner_file_id=EXCLUDED.banner_file_id,updated_at=now()`,[botId,photoPayload]);
-        await saveSession("home",{},botId); await send(token,chatId,"✅ بنر صفحه اصلی ذخیره شد.",homeKeyboard); return json(res,200,{ok:true});
+        const photoBytes = await getPhotoBytes();
+        if (!photoBytes) { await send(token,chatId,"لطفاً خودِ تصویر را به‌صورت Photo ارسال کن؛ ارسال متن یا فایل به‌جای عکس پذیرفته نیست."); return json(res,200,{ok:true}); }
+        try { await persistManagedImage(botId,"banner",null,photoBytes); }
+        catch (error) {
+          if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
+            await send(token,chatId,"سقف ۵ تصویر برای این ربات تکمیل شده است. ابتدا یکی از تصاویر قبلی را حذف کنید.",homeKeyboard);
+            return json(res,200,{ok:true});
+          }
+          throw error;
+        }
+        await saveSession("home",{},botId);
+        await send(token,chatId,"✅ بنر صفحه اصلی در فضای ذخیره‌سازی امن ثبت شد.",homeKeyboard);
+        return json(res,200,{ok:true});
       }
       if (menuSession.step === "add_content") {
         const photoPayload = menuSession.draft?.responseType === "photo" ? await getPhotoPayload() : null;
