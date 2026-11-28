@@ -14,7 +14,7 @@ const allowedHosts = new Set([
 if (!previewUrl || !productionUrl || !encryptionKeyRaw) {
   throw new Error("Set PREVIEW_DATABASE_URL, PRODUCTION_DATABASE_URL and BOT_TOKEN_ENCRYPTION_KEY in your local environment.");
 }
-if (!productionAppUrl.startsWith("https://")) throw new Error("PRODUCTION_APP_URL must use HTTPS.");
+if (new URL(productionAppUrl).hostname !== "telegram-bot-saas-app-ggr7-production.up.railway.app") throw new Error("PRODUCTION_APP_URL must be the verified Railway Production host.");
 
 function encryptionKey(): Buffer {
   if (/^[a-f0-9]{64}$/i.test(encryptionKeyRaw!)) return Buffer.from(encryptionKeyRaw!, "hex");
@@ -121,6 +121,10 @@ try {
         allowed_updates: ["message", "edited_message", "callback_query"],
         drop_pending_updates: false,
       });
+      const verified = await telegram<{ url?: string }>(token, "getWebhookInfo");
+      if (!verified.url || new URL(verified.url).host !== new URL(productionAppUrl).host || !new URL(verified.url).pathname.endsWith("/api/telegram/webhook")) {
+        throw new Error(`Telegram did not confirm the Production webhook for ${bot.username || bot.id}.`);
+      }
       console.log(`Customer bot connected to Production: @${bot.username || bot.id}`);
     } catch (error) {
       await production.query("UPDATE bots SET webhook_secret_hash=$1 WHERE id=$2", [previous.rows[0].webhook_secret_hash, bot.id]);
@@ -145,6 +149,10 @@ try {
     await telegram(managementToken, "setWebhook", {
       url, secret_token: managementSecret, allowed_updates: ["message"], drop_pending_updates: false,
     });
+    const verified = await telegram<{ url?: string }>(managementToken, "getWebhookInfo");
+    if (!verified.url || new URL(verified.url).host !== new URL(productionAppUrl).host || new URL(verified.url).pathname !== "/api/telegram/management-webhook") {
+      throw new Error("Telegram did not confirm the Production management webhook.");
+    }
     console.log(`Management bot webhook connected to Production: @${me.username || "management-bot"}`);
   } else {
     console.log("Management bot webhook was not changed (management credentials were not provided locally).");
