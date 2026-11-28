@@ -1,5 +1,6 @@
 import type { ApiRequest, ApiResponse } from "./server.js";
-import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";\nimport { isLegacyTelegramPhoto } from "./image-assets.js";
+import { bodyOf, db, json, ownedBot, requireUser } from "./server.js";
+import { isLegacyTelegramPhoto } from "./image-assets.js";
 
 const defaults = {
   theme: "luxury_modern",
