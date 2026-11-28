@@ -430,7 +430,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           const photoBytes = await getPhotoBytes();
           if (!photoBytes) { await send(token,chatId,"لطفاً خودِ عکس را ارسال کن و در صورت نیاز توضیح را در کپشن بنویس."); return json(res,200,{ok:true}); }
           const inserted = await db.query("INSERT INTO bot_menus(bot_id,title,payload,description,parent_id,response_type,response_content,target_url,is_active) VALUES($1,$2,$3,$4,$5,'photo',NULL,NULL,false) RETURNING id", [botId,draft.title,"",mediaCaption||null,draft.parentId??null]);
-          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes); }\n          await db.query("UPDATE bot_menus SET is_active=true,updated_at=now() WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]);
+          try { await persistManagedImage(botId,"menu",inserted.rows[0].id,photoBytes); await db.query("UPDATE bot_menus SET is_active=true,updated_at=now() WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]); }
           catch (error) {
             await db.query("DELETE FROM bot_menus WHERE id=$1 AND bot_id=$2",[inserted.rows[0].id,botId]);
             if (error instanceof Error && error.message === "IMAGE_QUOTA_EXCEEDED") {
