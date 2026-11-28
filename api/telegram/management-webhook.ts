@@ -4,7 +4,7 @@ import { deleteImage, putImage } from "../_lib/object-storage.js";
 import { exceedsImageQuota, imageSha256, isLegacyTelegramPhoto, newImageKey, validateImage } from "../_lib/image-assets.js";
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; username?: string };
-type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number}>; contact?: { phone_number: string; user_id?: number } };
+type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string; caption?: string; reply_to_message?: { message_id:number }; photo?: Array<{file_id:string;file_unique_id:string;width:number;height:number;file_size?:number}>; contact?: { phone_number: string; user_id?: number } };
 type TgUpdate = { update_id: number; message?: TgMessage };
 
 const adminKeyboard = {
@@ -288,7 +288,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const rawInput = (message.text ?? "").trim();
-    const photoFileId = message.photo?.[message.photo.length - 1]?.file_id ?? null;
+    const photoSizes = message.photo ?? [];\n    const photoFileId = [...photoSizes].reverse().find((photo) => photo.file_size !== undefined && photo.file_size <= 300 * 1024)?.file_id ?? photoSizes[0]?.file_id ?? null;
     const getPhotoBytes = async () => photoFileId ? downloadPhotoFromManagementBot(token, photoFileId) : null;
     const mediaCaption = (message.caption ?? "").trim().slice(0, 1000);
     const menuManagerButton = "🧩 مدیریت منو";
