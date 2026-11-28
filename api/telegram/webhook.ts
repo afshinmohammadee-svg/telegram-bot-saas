@@ -49,7 +49,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   let retryableUpdateId: number | null = null;
   try {
     const botResult = await db.query(
-      "SELECT b.id,b.owner_id,b.status,b.webhook_secret_hash,s.encrypted_token FROM bots b JOIN bot_secrets s ON s.bot_id=b.id WHERE b.id=$1 LIMIT 1",
+      "SELECT b.id,b.owner_id,b.status,b.display_name,b.webhook_secret_hash,s.encrypted_token FROM bots b JOIN bot_secrets s ON s.bot_id=b.id WHERE b.id=$1 LIMIT 1",
       [botId],
     );
     const bot = botResult.rows[0];
@@ -237,7 +237,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           const visitorHandle = sender.username ? "@"+sender.username : "بدون نام کاربری";
           const notification = "📩 پیام جدید بازدیدکننده\nربات: "+String(bot.display_name || "ربات مشتری")+"\nبازدیدکننده: "+visitorName+" ("+visitorHandle+")\nشناسه: "+String(sender.id)+"\n\n"+(visitorContent || "پیام رسانه‌ای: "+mediaKind)+"\n\nبرای پاسخ، روی همین پیام Reply بزن.";
           const sent = await telegram<{message_id:number}>(process.env.MANAGEMENT_BOT_TOKEN,"sendMessage",{chat_id:ownerTelegram.rows[0].telegram_user_id,text:notification,disable_web_page_preview:true});
-          await db.query("INSERT INTO visitor_message_forward_map(management_message_id,management_chat_id,bot_id,owner_user_id,visitor_chat_id,conversation_id,visitor_telegram_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (management_message_id) DO NOTHING",[sent.message_id,ownerTelegram.rows[0].telegram_user_id,bot.id,bot.owner_id,message.chat.id,conversationId,sender.id]);
+          await db.query("INSERT INTO visitor_message_forward_map(management_message_id,management_chat_id,bot_id,owner_user_id,visitor_chat_id,conversation_id,visitor_telegram_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (management_chat_id,management_message_id) DO NOTHING",[sent.message_id,ownerTelegram.rows[0].telegram_user_id,bot.id,bot.owner_id,message.chat.id,conversationId,sender.id]);
         }
       }
     }
