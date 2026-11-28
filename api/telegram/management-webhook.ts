@@ -43,9 +43,9 @@ async function storePhotoFromManagementBot(token: string, fileId: string): Promi
   const response = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
   if (!response.ok) throw new Error("Could not download management photo");
   const declaredSize = Number(response.headers.get("content-length") || 0);
-  if (declaredSize > 8 * 1024 * 1024) throw new Error("Photo exceeds 8 MB limit");
+  if (declaredSize > 300 * 1024) throw new Error("Photo exceeds 300 KiB limit");
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("Photo is empty or exceeds 8 MB limit");
+  if (!bytes.length || bytes.length > 300 * 1024) throw new Error("Photo is empty or exceeds 300 KiB limit");
   // Telegram's file endpoint may return application/octet-stream even for valid photos.
   // Detect the actual format from the file signature instead of trusting that header.
   let mime = "";
